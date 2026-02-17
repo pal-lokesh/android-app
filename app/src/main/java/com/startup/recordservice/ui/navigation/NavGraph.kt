@@ -6,9 +6,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import com.startup.recordservice.ui.screens.auth.LoginScreen
 import com.startup.recordservice.ui.screens.auth.SignupScreen
 import com.startup.recordservice.ui.screens.client.ClientDashboardScreen
+import com.startup.recordservice.ui.screens.client.ClientExploreScreen
+import com.startup.recordservice.ui.screens.client.BusinessDetailScreen
 import com.startup.recordservice.ui.screens.vendor.VendorDashboardScreen
 import com.startup.recordservice.ui.viewmodel.AuthViewModel
 
@@ -17,6 +21,10 @@ sealed class Screen(val route: String) {
     object Signup : Screen("signup")
     object ClientDashboard : Screen("client_dashboard")
     object VendorDashboard : Screen("vendor_dashboard")
+    object ClientExplore : Screen("client_explore")
+    object BusinessDetail : Screen("business_detail/{businessId}") {
+        fun createRoute(businessId: String) = "business_detail/$businessId"
+    }
 }
 
 @Composable
@@ -78,6 +86,52 @@ fun NavGraph(
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
+                },
+                onNavigateToExplore = {
+                    navController.navigate(Screen.ClientExplore.route)
+                },
+                onBusinessClick = { businessId ->
+                    try {
+                        if (businessId.isNotBlank()) {
+                            navController.navigate(Screen.BusinessDetail.createRoute(businessId))
+                        } else {
+                            android.util.Log.e("NavGraph", "Cannot navigate: businessId is blank")
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("NavGraph", "Navigation error: ${e.message}", e)
+                    }
+                }
+            )
+        }
+        
+        composable(Screen.ClientExplore.route) {
+            ClientExploreScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onBusinessClick = { businessId ->
+                    try {
+                        if (businessId.isNotBlank()) {
+                            navController.navigate(Screen.BusinessDetail.createRoute(businessId))
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("NavGraph", "Navigation error: ${e.message}", e)
+                    }
+                }
+            )
+        }
+        
+        composable(
+            route = Screen.BusinessDetail.route,
+            arguments = listOf(
+                navArgument("businessId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val businessId = backStackEntry.arguments?.getString("businessId") ?: ""
+            BusinessDetailScreen(
+                businessId = businessId,
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }

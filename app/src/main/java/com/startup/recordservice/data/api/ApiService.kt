@@ -66,6 +66,9 @@ interface ApiService {
     suspend fun getPlateDishes(@Path("plateId") plateId: String): Response<List<DishResponse>>
     
     // Inventory
+    @GET("inventory")
+    suspend fun getAllInventory(): Response<List<InventoryResponse>>
+    
     @GET("inventory/business/{businessId}")
     suspend fun getBusinessInventory(@Path("businessId") businessId: String): Response<List<InventoryResponse>>
     
@@ -93,4 +96,29 @@ interface ApiService {
     // Products
     @GET("products")
     suspend fun getProducts(): Response<List<com.startup.recordservice.data.model.Product>>
+    
+    // Themes
+    @GET("themes")
+    suspend fun getAllThemes(): Response<List<ThemeResponse>>
+    
+    @GET("themes/business/{businessId}")
+    suspend fun getBusinessThemes(@Path("businessId") businessId: String): Response<List<ThemeResponse>>
+    
+    @GET("themes/{themeId}")
+    suspend fun getTheme(@Path("themeId") themeId: String): Response<ThemeResponse>
+    
+    @GET("themes/category/{category}")
+    suspend fun getThemesByCategory(@Path("category") category: String): Response<List<ThemeResponse>>
+    
+    @POST("themes")
+    suspend fun createTheme(@Body request: ThemeRequest): Response<ThemeResponse>
+    
+    @PUT("themes/{themeId}")
+    suspend fun updateTheme(
+        @Path("themeId") themeId: String,
+        @Body request: ThemeRequest
+    ): Response<ThemeResponse>
+    
+    @DELETE("themes/{themeId}")
+    suspend fun deleteTheme(@Path("themeId") themeId: String): Response<MessageResponse>
 }

@@ -41,12 +41,19 @@ class VendorViewModel @Inject constructor(
     val orders: StateFlow<List<OrderResponse>> = _orders.asStateFlow()
     
     init {
-        loadData()
+        // Don't load data in init - wait for explicit call after navigation
     }
     
     fun loadData() {
         viewModelScope.launch {
             try {
+                // Check if user is logged in before loading data
+                if (!tokenManager.isLoggedIn()) {
+                    android.util.Log.w("VendorViewModel", "User not logged in, skipping data load")
+                    _uiState.value = VendorUiState.Error("User not logged in")
+                    return@launch
+                }
+                
                 _uiState.value = VendorUiState.Loading
                 
                 // Load vendor's businesses
@@ -55,6 +62,7 @@ class VendorViewModel @Inject constructor(
                     businessRepository.getUserBusinesses(phoneNumber)
                         .onSuccess { businessList ->
                             _businesses.value = businessList
+                            android.util.Log.d("VendorViewModel", "Loaded ${businessList.size} businesses")
                             
                             // Load orders for all businesses
                             loadOrdersForBusinesses(businessList)

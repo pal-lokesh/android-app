@@ -41,18 +41,26 @@ class ClientViewModel @Inject constructor(
     val orders: StateFlow<List<OrderResponse>> = _orders.asStateFlow()
     
     init {
-        loadData()
+        // Don't load data in init - wait for explicit call after navigation
     }
     
     fun loadData() {
         viewModelScope.launch {
             try {
+                // Check if user is logged in before loading data
+                if (!tokenManager.isLoggedIn()) {
+                    android.util.Log.w("ClientViewModel", "User not logged in, skipping data load")
+                    _uiState.value = ClientUiState.Error("User not logged in")
+                    return@launch
+                }
+                
                 _uiState.value = ClientUiState.Loading
                 
                 // Load businesses
                 businessRepository.getAllBusinesses()
                     .onSuccess { businessList ->
                         _businesses.value = businessList
+                        android.util.Log.d("ClientViewModel", "Loaded ${businessList.size} businesses")
                     }
                     .onFailure { exception ->
                         android.util.Log.e("ClientViewModel", "Failed to load businesses: ${exception.message}")
@@ -65,6 +73,7 @@ class ClientViewModel @Inject constructor(
                     orderRepository.getUserOrders(userId)
                         .onSuccess { orderList ->
                             _orders.value = orderList
+                            android.util.Log.d("ClientViewModel", "Loaded ${orderList.size} orders")
                         }
                         .onFailure { exception ->
                             android.util.Log.e("ClientViewModel", "Failed to load orders: ${exception.message}")

@@ -26,6 +26,11 @@ fun VendorDashboardScreen(
     val businesses by viewModel.businesses.collectAsStateWithLifecycle()
     val orders by viewModel.orders.collectAsStateWithLifecycle()
     
+    // Load data when screen is first displayed
+    LaunchedEffect(Unit) {
+        viewModel.loadData()
+    }
+    
     Scaffold(
         topBar = {
             SmallTopAppBar(
@@ -115,7 +120,7 @@ fun VendorDashboardScreen(
                     }
                 }
             }
-            else -> {
+            is com.startup.recordservice.ui.viewmodel.VendorUiState.Success -> {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -188,7 +193,7 @@ fun VendorDashboardScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = business.businessName,
+                                            text = business.businessName ?: "Unknown Business",
                                             style = MaterialTheme.typography.titleLarge,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -205,9 +210,9 @@ fun VendorDashboardScreen(
                                             }
                                         }
                                     }
-                                    if (business.category.isNotEmpty()) {
+                                    if (!business.category.isNullOrEmpty()) {
                                         Text(
-                                            text = business.category,
+                                            text = business.category ?: "",
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.padding(top = 4.dp)
@@ -267,12 +272,12 @@ fun VendorDashboardScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "Order #${order.orderId.toString().take(8)}",
+                                            text = "Order #${order.orderId?.toString()?.take(8) ?: "N/A"}",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Surface(
-                                            color = when (order.status) {
+                                            color = when (order.status?.uppercase()) {
                                                 "PENDING" -> MaterialTheme.colorScheme.tertiaryContainer
                                                 "CONFIRMED" -> MaterialTheme.colorScheme.primaryContainer
                                                 "DELIVERED" -> MaterialTheme.colorScheme.secondaryContainer
@@ -281,7 +286,7 @@ fun VendorDashboardScreen(
                                             shape = MaterialTheme.shapes.small
                                         ) {
                                             Text(
-                                                text = order.status,
+                                                text = order.status ?: "UNKNOWN",
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                                 style = MaterialTheme.typography.labelSmall
                                             )
@@ -289,17 +294,17 @@ fun VendorDashboardScreen(
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "Date: ${order.orderDate}",
+                                        text = "Date: ${order.orderDate ?: "N/A"}",
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                     Text(
-                                        text = "Total: ₹${String.format("%.2f", order.totalAmount)}",
+                                        text = "Total: ₹${String.format("%.2f", order.totalAmount ?: 0.0)}",
                                         style = MaterialTheme.typography.bodyLarge,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(top = 4.dp)
                                     )
                                     Text(
-                                        text = "${order.items.size} item(s)",
+                                        text = "${order.items?.size ?: 0} item(s)",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -333,6 +338,17 @@ fun VendorDashboardScreen(
                             }
                         }
                     }
+                }
+            }
+            is com.startup.recordservice.ui.viewmodel.VendorUiState.Idle -> {
+                // Show loading while initializing
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
                 }
             }
         }

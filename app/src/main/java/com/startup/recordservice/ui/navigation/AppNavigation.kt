@@ -7,27 +7,31 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
 import com.startup.recordservice.ui.viewmodel.AuthViewModel
+import com.startup.recordservice.ui.viewmodel.StartupViewModel
 
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
     val authViewModel: AuthViewModel = hiltViewModel()
+    val startupViewModel: StartupViewModel = hiltViewModel()
     
     // Check if user is logged in on app start
     val isLoggedIn = authViewModel.isLoggedIn()
     val userType = authViewModel.getCurrentUserType()
+    
+    // Fetch startup data immediately when app starts (if logged in)
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn) {
+            // Pre-fetch data on startup for better UX
+            startupViewModel.loadStartupData()
+        }
+    }
     
     val startDestination = if (isLoggedIn && userType != null) {
         if (userType == "VENDOR") Screen.VendorDashboard.route
         else Screen.ClientDashboard.route
     } else {
         Screen.Login.route
-    }
-    
-    // Handle 401 errors - logout and navigate to login
-    LaunchedEffect(Unit) {
-        // This will be triggered when AuthInterceptor detects 401
-        // The ViewModel should observe token changes and handle logout
     }
     
     NavGraph(

@@ -1,5 +1,6 @@
 package com.startup.recordservice.ui.screens.client
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,11 +21,18 @@ import com.startup.recordservice.ui.viewmodel.ClientViewModel
 @Composable
 fun ClientDashboardScreen(
     onLogout: () -> Unit,
+    onNavigateToExplore: () -> Unit = {},
+    onBusinessClick: (String) -> Unit = {},
     viewModel: ClientViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val businesses by viewModel.businesses.collectAsStateWithLifecycle()
     val orders by viewModel.orders.collectAsStateWithLifecycle()
+    
+    // Load data when screen is first displayed
+    LaunchedEffect(Unit) {
+        viewModel.loadData()
+    }
     
     Scaffold(
         topBar = {
@@ -53,7 +61,7 @@ fun ClientDashboardScreen(
                 )
                 NavigationBarItem(
                     selected = false,
-                    onClick = { /* TODO: Navigate to explore */ },
+                    onClick = onNavigateToExplore,
                     icon = { Icon(Icons.Default.Explore, contentDescription = "Explore") },
                     label = { Text("Explore") }
                 )
@@ -118,7 +126,7 @@ fun ClientDashboardScreen(
                     }
                 }
             }
-            else -> {
+            is com.startup.recordservice.ui.viewmodel.ClientUiState.Success -> {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -158,12 +166,12 @@ fun ClientDashboardScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "Order #${order.orderId.toString().take(8)}",
+                                            text = "Order #${order.orderId?.toString()?.take(8) ?: "N/A"}",
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Surface(
-                                            color = when (order.status) {
+                                            color = when (order.status?.uppercase()) {
                                                 "PENDING" -> MaterialTheme.colorScheme.tertiaryContainer
                                                 "CONFIRMED" -> MaterialTheme.colorScheme.primaryContainer
                                                 "DELIVERED" -> MaterialTheme.colorScheme.secondaryContainer
@@ -172,7 +180,7 @@ fun ClientDashboardScreen(
                                             shape = MaterialTheme.shapes.small
                                         ) {
                                             Text(
-                                                text = order.status,
+                                                text = order.status ?: "UNKNOWN",
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                                 style = MaterialTheme.typography.labelSmall
                                             )
@@ -180,17 +188,17 @@ fun ClientDashboardScreen(
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "Date: ${order.orderDate}",
+                                        text = "Date: ${order.orderDate ?: "N/A"}",
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                     Text(
-                                        text = "Total: ₹${String.format("%.2f", order.totalAmount)}",
+                                        text = "Total: ₹${String.format("%.2f", order.totalAmount ?: 0.0)}",
                                         style = MaterialTheme.typography.bodyLarge,
                                         fontWeight = FontWeight.Bold,
                                         modifier = Modifier.padding(top = 4.dp)
                                     )
                                     Text(
-                                        text = "${order.items.size} item(s)",
+                                        text = "${order.items?.size ?: 0} item(s)",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -238,19 +246,32 @@ fun ClientDashboardScreen(
                     } else {
                         items(businesses) { business ->
                             Card(
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val id = business.businessId
+                                        if (!id.isNullOrBlank()) {
+                                            try {
+                                                onBusinessClick(id)
+                                            } catch (e: Exception) {
+                                                android.util.Log.e("ClientDashboard", "Error navigating to business: ${e.message}", e)
+                                            }
+                                        } else {
+                                            android.util.Log.w("ClientDashboard", "Business ID is null or blank")
+                                        }
+                                    }
                             ) {
                                 Column(
                                     modifier = Modifier.padding(16.dp)
                                 ) {
                                     Text(
-                                        text = business.businessName,
+                                        text = business.businessName ?: "Unknown Business",
                                         style = MaterialTheme.typography.titleLarge,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    if (business.category.isNotEmpty()) {
+                                    if (!business.category.isNullOrEmpty()) {
                                         Text(
-                                            text = business.category,
+                                            text = business.category ?: "",
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.padding(top = 4.dp)
@@ -286,6 +307,17 @@ fun ClientDashboardScreen(
                             }
                         }
                     }
+                }
+            }
+            is com.startup.recordservice.ui.viewmodel.ClientUiState.Idle -> {
+                // Show loading while initializing
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
                 }
             }
         }

@@ -32,7 +32,7 @@ class TokenManager @Inject constructor(
     }
 
     fun saveToken(token: String) {
-        sharedPreferences.edit().putString(KEY_ACCESS_TOKEN, token).apply()
+        sharedPreferences.edit().putString(KEY_ACCESS_TOKEN, token).commit()
     }
 
     fun getToken(): String? {
@@ -40,7 +40,7 @@ class TokenManager @Inject constructor(
     }
 
     fun saveUserPhone(phone: String) {
-        sharedPreferences.edit().putString(KEY_USER_PHONE, phone).apply()
+        sharedPreferences.edit().putString(KEY_USER_PHONE, phone).commit()
     }
 
     fun getUserPhone(): String? {
@@ -48,7 +48,7 @@ class TokenManager @Inject constructor(
     }
 
     fun saveUserType(userType: String) {
-        sharedPreferences.edit().putString(KEY_USER_TYPE, userType).apply()
+        sharedPreferences.edit().putString(KEY_USER_TYPE, userType).commit()
     }
 
     fun getUserType(): String? {
@@ -56,7 +56,7 @@ class TokenManager @Inject constructor(
     }
 
     fun saveUserId(userId: String) {
-        sharedPreferences.edit().putString(KEY_USER_ID, userId).apply()
+        sharedPreferences.edit().putString(KEY_USER_ID, userId).commit()
     }
 
     fun getUserId(): String? {

@@ -50,9 +50,9 @@ data class OrderItemRequest(
 
 data class OrderResponse(
     @SerializedName("orderId")
-    val orderId: Long,
+    val orderId: Long? = null,
     @SerializedName("userId")
-    val userId: String,
+    val userId: String? = null,
     @SerializedName("customerName")
     val customerName: String? = null,
     @SerializedName("customerEmail")
@@ -60,13 +60,13 @@ data class OrderResponse(
     @SerializedName("customerPhone")
     val customerPhone: String? = null,
     @SerializedName("orderDate")
-    val orderDate: String,
+    val orderDate: String? = null,
     @SerializedName("status")
-    val status: String,
+    val status: String? = null,
     @SerializedName("totalAmount")
-    val totalAmount: Double,
+    val totalAmount: Double? = null,
     @SerializedName("orderItems")
-    val items: List<OrderItemResponse>,
+    val items: List<OrderItemResponse>? = null,
     @SerializedName("deliveryAddress")
     val deliveryAddress: String? = null,
     @SerializedName("deliveryLatitude")
@@ -80,14 +80,23 @@ data class OrderResponse(
 )
 
 data class OrderItemResponse(
-    val itemId: String,
-    val itemName: String,
-    val itemType: String,
-    val businessId: String,
+    @SerializedName("itemId")
+    val itemId: String? = null,
+    @SerializedName("itemName")
+    val itemName: String? = null,
+    @SerializedName("itemType")
+    val itemType: String? = null,
+    @SerializedName("businessId")
+    val businessId: String? = null,
+    @SerializedName("businessName")
     val businessName: String? = null,
-    val quantity: Int,
-    val price: Double,
-    val selectedDishes: List<String>? = null,
+    @SerializedName("quantity")
+    val quantity: Int = 0,
+    @SerializedName("itemPrice")
+    val price: Double = 0.0,
+    @SerializedName("selectedDishes")
+    val selectedDishes: String? = null, // Backend returns as JSON string, not array
+    @SerializedName("bookingDate")
     val bookingDate: String? = null
 )
 
