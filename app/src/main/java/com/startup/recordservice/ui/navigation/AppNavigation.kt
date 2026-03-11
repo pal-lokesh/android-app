@@ -29,7 +29,7 @@ fun AppNavigation() {
     
     val startDestination = if (isLoggedIn && userType != null) {
         if (userType == "VENDOR") Screen.VendorDashboard.route
-        else Screen.ClientDashboard.route
+        else Screen.ClientExplore.route
     } else {
         Screen.Login.route
     }

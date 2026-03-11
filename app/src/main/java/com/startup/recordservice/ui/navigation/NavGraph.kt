@@ -12,8 +12,14 @@ import com.startup.recordservice.ui.screens.auth.LoginScreen
 import com.startup.recordservice.ui.screens.auth.SignupScreen
 import com.startup.recordservice.ui.screens.client.ClientDashboardScreen
 import com.startup.recordservice.ui.screens.client.ClientExploreScreen
+import com.startup.recordservice.ui.screens.client.ClientProfileScreen
 import com.startup.recordservice.ui.screens.client.BusinessDetailScreen
 import com.startup.recordservice.ui.screens.vendor.VendorDashboardScreen
+import com.startup.recordservice.ui.screens.vendor.VendorProfileScreen
+import com.startup.recordservice.ui.screens.vendor.VendorTab
+import com.startup.recordservice.ui.screens.vendor.CreateBusinessScreen
+import com.startup.recordservice.ui.screens.vendor.CreateInventoryScreen
+import com.startup.recordservice.ui.screens.vendor.CreateThemeScreen
 import com.startup.recordservice.ui.viewmodel.AuthViewModel
 
 sealed class Screen(val route: String) {
@@ -21,7 +27,15 @@ sealed class Screen(val route: String) {
     object Signup : Screen("signup")
     object ClientDashboard : Screen("client_dashboard")
     object VendorDashboard : Screen("vendor_dashboard")
+    object VendorOrders : Screen("vendor_orders")
+    object VendorThemes : Screen("vendor_themes")
+    object VendorInventory : Screen("vendor_inventory")
+    object VendorProfile : Screen("vendor_profile")
     object ClientExplore : Screen("client_explore")
+    object ClientProfile : Screen("client_profile")
+    object CreateBusiness : Screen("create_business")
+    object CreateInventory : Screen("create_inventory")
+    object CreateTheme : Screen("create_theme")
     object BusinessDetail : Screen("business_detail/{businessId}") {
         fun createRoute(businessId: String) = "business_detail/$businessId"
     }
@@ -44,7 +58,7 @@ fun NavGraph(
                 onLoginSuccess = { userType ->
                     try {
                         val destination = if (userType == "VENDOR") Screen.VendorDashboard.route
-                            else Screen.ClientDashboard.route
+                            else Screen.ClientExplore.route
                         navController.navigate(destination) {
                             popUpTo(Screen.Login.route) { inclusive = true }
                         }
@@ -63,7 +77,7 @@ fun NavGraph(
                 onSignupSuccess = { userType ->
                     try {
                         val destination = if (userType == "VENDOR") Screen.VendorDashboard.route
-                            else Screen.ClientDashboard.route
+                            else Screen.ClientExplore.route
                         navController.navigate(destination) {
                             popUpTo(Screen.Signup.route) { inclusive = true }
                         }
@@ -117,6 +131,9 @@ fun NavGraph(
                     } catch (e: Exception) {
                         android.util.Log.e("NavGraph", "Navigation error: ${e.message}", e)
                     }
+                },
+                onProfileClick = {
+                    navController.navigate(Screen.ClientProfile.route)
                 }
             )
         }
@@ -140,6 +157,163 @@ fun NavGraph(
             VendorDashboardScreen(
                 onLogout = {
                     authViewModel.logout()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                onCreateBusinessClick = {
+                    navController.navigate(Screen.CreateBusiness.route)
+                },
+                onAddInventoryClick = {
+                    navController.navigate(Screen.CreateInventory.route)
+                },
+                onAddThemeClick = {
+                    navController.navigate(Screen.CreateTheme.route)
+                },
+                onOrdersClick = {
+                    navController.navigate(Screen.VendorOrders.route)
+                },
+                onInventoryTabClick = {
+                    navController.navigate(Screen.VendorInventory.route)
+                },
+                onThemeTabClick = {
+                    navController.navigate(Screen.VendorThemes.route)
+                },
+                onProfileClick = {
+                    navController.navigate(Screen.VendorProfile.route)
+                },
+                currentTab = VendorTab.DASHBOARD
+            )
+        }
+
+        // For now, reuse VendorDashboardScreen for these tabs (you can swap to dedicated screens later)
+        composable(Screen.VendorOrders.route) {
+            VendorDashboardScreen(
+                onLogout = {
+                    authViewModel.logout()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                onCreateBusinessClick = {
+                    navController.navigate(Screen.CreateBusiness.route)
+                },
+                onAddInventoryClick = {
+                    navController.navigate(Screen.CreateInventory.route)
+                },
+                onAddThemeClick = {
+                    navController.navigate(Screen.CreateTheme.route)
+                },
+                onOrdersClick = { /* already on orders tab */ },
+                onInventoryTabClick = {
+                    navController.navigate(Screen.VendorInventory.route)
+                },
+                onThemeTabClick = {
+                    navController.navigate(Screen.VendorThemes.route)
+                },
+                onProfileClick = {
+                    navController.navigate(Screen.VendorProfile.route)
+                },
+                currentTab = VendorTab.ORDERS
+            )
+        }
+
+        composable(Screen.VendorInventory.route) {
+            VendorDashboardScreen(
+                onLogout = {
+                    authViewModel.logout()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                onCreateBusinessClick = {
+                    navController.navigate(Screen.CreateBusiness.route)
+                },
+                onAddInventoryClick = {
+                    navController.navigate(Screen.CreateInventory.route)
+                },
+                onAddThemeClick = {
+                    navController.navigate(Screen.CreateTheme.route)
+                },
+                onOrdersClick = {
+                    navController.navigate(Screen.VendorOrders.route)
+                },
+                onInventoryTabClick = { /* already on inventory tab */ },
+                onThemeTabClick = {
+                    navController.navigate(Screen.VendorThemes.route)
+                },
+                onProfileClick = {
+                    navController.navigate(Screen.VendorProfile.route)
+                },
+                currentTab = VendorTab.INVENTORY
+            )
+        }
+
+        composable(Screen.VendorThemes.route) {
+            VendorDashboardScreen(
+                onLogout = {
+                    authViewModel.logout()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+                onCreateBusinessClick = {
+                    navController.navigate(Screen.CreateBusiness.route)
+                },
+                onAddInventoryClick = {
+                    navController.navigate(Screen.CreateInventory.route)
+                },
+                onAddThemeClick = {
+                    navController.navigate(Screen.CreateTheme.route)
+                },
+                onOrdersClick = {
+                    navController.navigate(Screen.VendorOrders.route)
+                },
+                onInventoryTabClick = {
+                    navController.navigate(Screen.VendorInventory.route)
+                },
+                onThemeTabClick = { /* already on theme tab */ },
+                onProfileClick = {
+                    navController.navigate(Screen.VendorProfile.route)
+                },
+                currentTab = VendorTab.THEME
+            )
+        }
+
+        composable(Screen.VendorProfile.route) {
+            VendorProfileScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onLogout = {
+                    authViewModel.logout()
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        composable(Screen.CreateBusiness.route) {
+            CreateBusinessScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.CreateInventory.route) {
+            CreateInventoryScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.CreateTheme.route) {
+            CreateThemeScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.ClientProfile.route) {
+            ClientProfileScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onLogoutSuccess = {
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }

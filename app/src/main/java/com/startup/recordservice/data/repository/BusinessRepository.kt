@@ -2,6 +2,7 @@ package com.startup.recordservice.data.repository
 
 import android.util.Log
 import com.startup.recordservice.data.api.ApiService
+import com.startup.recordservice.data.model.BusinessCreateRequest
 import com.startup.recordservice.data.model.BusinessResponse
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -64,23 +65,55 @@ class BusinessRepository @Inject constructor(
     suspend fun getUserBusinesses(phoneNumber: String): Result<List<BusinessResponse>> {
         return try {
             Log.d(TAG, "Fetching businesses for user: $phoneNumber")
-            val response = apiService.getUserBusinesses(phoneNumber)
+            val response = apiService.getBusinessByPhone(phoneNumber)
             
-            if (response.isSuccessful && response.body() != null) {
-                val businesses = response.body()!!
-                Log.d(TAG, "Successfully fetched ${businesses.size} businesses for user")
-                Result.success(businesses)
-            } else {
-                val errorBody = try {
-                    response.errorBody()?.string() ?: "Failed to fetch user businesses (HTTP ${response.code()})"
-                } catch (e: Exception) {
-                    "Failed to fetch user businesses (HTTP ${response.code()}): ${e.message}"
+            when {
+                response.isSuccessful && response.body() != null -> {
+                    val business = response.body()!!
+                    Log.d(TAG, "Successfully fetched business for user")
+                    Result.success(listOf(business))
                 }
-                Log.e(TAG, "Failed to fetch user businesses: $errorBody")
-                Result.failure(Exception(errorBody))
+                // If no business exists yet for this vendor, backend returns 404 – treat as empty list
+                response.code() == 404 -> {
+                    Log.w(TAG, "No businesses found for user $phoneNumber (HTTP 404). Returning empty list.")
+                    Result.success(emptyList())
+                }
+                else -> {
+                    val errorBody = try {
+                        response.errorBody()?.string() ?: "Failed to fetch user businesses (HTTP ${response.code()})"
+                    } catch (e: Exception) {
+                        "Failed to fetch user businesses (HTTP ${response.code()}): ${e.message}"
+                    }
+                    Log.e(TAG, "Failed to fetch user businesses: $errorBody")
+                    Result.failure(Exception(errorBody))
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching user businesses: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun createBusiness(request: BusinessCreateRequest): Result<BusinessResponse> {
+        return try {
+            Log.d(TAG, "Creating business for phone: ${request.phoneNumber}")
+            val response = apiService.createBusiness(request)
+            
+            if (response.isSuccessful && response.body() != null) {
+                val created = response.body()!!
+                Log.d(TAG, "Business created with id=${created.businessId}")
+                Result.success(created)
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to create business (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to create business (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Failed to create business: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating business: ${e.message}", e)
             Result.failure(e)
         }
     }

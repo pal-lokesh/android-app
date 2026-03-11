@@ -27,6 +27,44 @@ class AuthViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
     
+    // Verification states
+    private val _emailVerified = MutableStateFlow<Boolean?>(null)
+    val emailVerified: StateFlow<Boolean?> = _emailVerified.asStateFlow()
+    
+    private val _phoneVerified = MutableStateFlow<Boolean?>(null)
+    val phoneVerified: StateFlow<Boolean?> = _phoneVerified.asStateFlow()
+    
+    private val _emailVerifying = MutableStateFlow(false)
+    val emailVerifying: StateFlow<Boolean> = _emailVerifying.asStateFlow()
+    
+    private val _phoneVerifying = MutableStateFlow(false)
+    val phoneVerifying: StateFlow<Boolean> = _phoneVerifying.asStateFlow()
+    
+    // OTP states
+    private val _emailOtpSent = MutableStateFlow(false)
+    val emailOtpSent: StateFlow<Boolean> = _emailOtpSent.asStateFlow()
+    
+    private val _phoneOtpSent = MutableStateFlow(false)
+    val phoneOtpSent: StateFlow<Boolean> = _phoneOtpSent.asStateFlow()
+    
+    private val _emailOtpVerified = MutableStateFlow(false)
+    val emailOtpVerified: StateFlow<Boolean> = _emailOtpVerified.asStateFlow()
+    
+    private val _phoneOtpVerified = MutableStateFlow(false)
+    val phoneOtpVerified: StateFlow<Boolean> = _phoneOtpVerified.asStateFlow()
+    
+    private val _sendingEmailOtp = MutableStateFlow(false)
+    val sendingEmailOtp: StateFlow<Boolean> = _sendingEmailOtp.asStateFlow()
+    
+    private val _sendingPhoneOtp = MutableStateFlow(false)
+    val sendingPhoneOtp: StateFlow<Boolean> = _sendingPhoneOtp.asStateFlow()
+    
+    private val _verifyingEmailOtp = MutableStateFlow(false)
+    val verifyingEmailOtp: StateFlow<Boolean> = _verifyingEmailOtp.asStateFlow()
+    
+    private val _verifyingPhoneOtp = MutableStateFlow(false)
+    val verifyingPhoneOtp: StateFlow<Boolean> = _verifyingPhoneOtp.asStateFlow()
+    
     fun login(phoneNumber: String, password: String) {
         viewModelScope.launch {
             try {
@@ -76,10 +114,23 @@ class AuthViewModel @Inject constructor(
                 
                 authRepository.signup(request)
                     .onSuccess { signupResponse ->
-                        // Ensure userType is not null or empty
-                        val responseUserType = signupResponse.user.userType?.takeIf { it.isNotBlank() }
-                            ?: userType // Fallback to requested userType
-                        _uiState.value = AuthUiState.Success(responseUserType)
+                        // After successful signup, automatically log the user in so dashboards work
+                        val loginPhone = signupResponse.user.phoneNumber?.takeIf { it.isNotBlank() }
+                            ?: phoneNumber
+                        
+                        authRepository.login(loginPhone, password)
+                            .onSuccess { loginResponse ->
+                                // Ensure userType is not null or empty
+                                val responseUserType = loginResponse.userType?.takeIf { it.isNotBlank() }
+                                    ?: signupResponse.user.userType?.takeIf { it.isNotBlank() }
+                                    ?: userType
+                                _uiState.value = AuthUiState.Success(responseUserType)
+                            }
+                            .onFailure { exception ->
+                                _uiState.value = AuthUiState.Error(
+                                    "Signup succeeded but login failed: ${exception.message ?: "Unknown error"}"
+                                )
+                            }
                     }
                     .onFailure { exception ->
                         _uiState.value = AuthUiState.Error(
@@ -114,5 +165,179 @@ class AuthViewModel @Inject constructor(
     
     fun getCurrentUserType(): String? {
         return authRepository.getCurrentUserType()
+    }
+    
+    fun verifyEmail(email: String) {
+        if (email.isBlank()) {
+            _emailVerified.value = null
+            return
+        }
+        
+        viewModelScope.launch {
+            try {
+                _emailVerifying.value = true
+                _emailVerified.value = null
+                
+                authRepository.checkEmail(email)
+                    .onSuccess { exists ->
+                        _emailVerified.value = !exists // If email doesn't exist, it's available (verified)
+                        android.util.Log.d("AuthViewModel", "Email verification: exists=$exists, available=${!exists}")
+                    }
+                    .onFailure { exception ->
+                        _emailVerified.value = null
+                        android.util.Log.e("AuthViewModel", "Email verification failed: ${exception.message}")
+                    }
+            } catch (e: Exception) {
+                _emailVerified.value = null
+                android.util.Log.e("AuthViewModel", "Email verification error: ${e.message}", e)
+            } finally {
+                _emailVerifying.value = false
+            }
+        }
+    }
+    
+    fun verifyPhone(phoneNumber: String) {
+        if (phoneNumber.isBlank()) {
+            _phoneVerified.value = null
+            return
+        }
+        
+        viewModelScope.launch {
+            try {
+                _phoneVerifying.value = true
+                _phoneVerified.value = null
+                
+                authRepository.checkPhone(phoneNumber)
+                    .onSuccess { exists ->
+                        _phoneVerified.value = !exists // If phone doesn't exist, it's available (verified)
+                        android.util.Log.d("AuthViewModel", "Phone verification: exists=$exists, available=${!exists}")
+                    }
+                    .onFailure { exception ->
+                        _phoneVerified.value = null
+                        android.util.Log.e("AuthViewModel", "Phone verification failed: ${exception.message}")
+                    }
+            } catch (e: Exception) {
+                _phoneVerified.value = null
+                android.util.Log.e("AuthViewModel", "Phone verification error: ${e.message}", e)
+            } finally {
+                _phoneVerifying.value = false
+            }
+        }
+    }
+    
+    fun resetVerification() {
+        _emailVerified.value = null
+        _phoneVerified.value = null
+    }
+    
+    fun sendEmailOtp(email: String) {
+        if (email.isBlank()) return
+        
+        viewModelScope.launch {
+            try {
+                _sendingEmailOtp.value = true
+                authRepository.sendEmailOtp(email)
+                    .onSuccess {
+                        _emailOtpSent.value = true
+                        android.util.Log.d("AuthViewModel", "Email OTP sent successfully")
+                    }
+                    .onFailure { exception ->
+                        _emailOtpSent.value = false
+                        _uiState.value = AuthUiState.Error(exception.message ?: "Failed to send OTP")
+                        android.util.Log.e("AuthViewModel", "Failed to send email OTP: ${exception.message}")
+                    }
+            } catch (e: Exception) {
+                _emailOtpSent.value = false
+                _uiState.value = AuthUiState.Error("Failed to send OTP: ${e.message ?: "Unknown error"}")
+                android.util.Log.e("AuthViewModel", "Error sending email OTP: ${e.message}", e)
+            } finally {
+                _sendingEmailOtp.value = false
+            }
+        }
+    }
+    
+    fun sendPhoneOtp(phoneNumber: String) {
+        if (phoneNumber.isBlank()) return
+        
+        viewModelScope.launch {
+            try {
+                _sendingPhoneOtp.value = true
+                authRepository.sendPhoneOtp(phoneNumber)
+                    .onSuccess {
+                        _phoneOtpSent.value = true
+                        android.util.Log.d("AuthViewModel", "Phone OTP sent successfully")
+                    }
+                    .onFailure { exception ->
+                        _phoneOtpSent.value = false
+                        _uiState.value = AuthUiState.Error(exception.message ?: "Failed to send OTP")
+                        android.util.Log.e("AuthViewModel", "Failed to send phone OTP: ${exception.message}")
+                    }
+            } catch (e: Exception) {
+                _phoneOtpSent.value = false
+                _uiState.value = AuthUiState.Error("Failed to send OTP: ${e.message ?: "Unknown error"}")
+                android.util.Log.e("AuthViewModel", "Error sending phone OTP: ${e.message}", e)
+            } finally {
+                _sendingPhoneOtp.value = false
+            }
+        }
+    }
+    
+    fun verifyEmailOtp(email: String, otp: String) {
+        if (email.isBlank() || otp.isBlank()) return
+        
+        viewModelScope.launch {
+            try {
+                _verifyingEmailOtp.value = true
+                authRepository.verifyEmailOtp(email, otp)
+                    .onSuccess {
+                        _emailOtpVerified.value = true
+                        android.util.Log.d("AuthViewModel", "Email OTP verified successfully")
+                    }
+                    .onFailure { exception ->
+                        _emailOtpVerified.value = false
+                        _uiState.value = AuthUiState.Error(exception.message ?: "Invalid OTP")
+                        android.util.Log.e("AuthViewModel", "Failed to verify email OTP: ${exception.message}")
+                    }
+            } catch (e: Exception) {
+                _emailOtpVerified.value = false
+                _uiState.value = AuthUiState.Error("Failed to verify OTP: ${e.message ?: "Unknown error"}")
+                android.util.Log.e("AuthViewModel", "Error verifying email OTP: ${e.message}", e)
+            } finally {
+                _verifyingEmailOtp.value = false
+            }
+        }
+    }
+    
+    fun verifyPhoneOtp(phoneNumber: String, otp: String) {
+        if (phoneNumber.isBlank() || otp.isBlank()) return
+        
+        viewModelScope.launch {
+            try {
+                _verifyingPhoneOtp.value = true
+                authRepository.verifyPhoneOtp(phoneNumber, otp)
+                    .onSuccess {
+                        _phoneOtpVerified.value = true
+                        android.util.Log.d("AuthViewModel", "Phone OTP verified successfully")
+                    }
+                    .onFailure { exception ->
+                        _phoneOtpVerified.value = false
+                        _uiState.value = AuthUiState.Error(exception.message ?: "Invalid OTP")
+                        android.util.Log.e("AuthViewModel", "Failed to verify phone OTP: ${exception.message}")
+                    }
+            } catch (e: Exception) {
+                _phoneOtpVerified.value = false
+                _uiState.value = AuthUiState.Error("Failed to verify OTP: ${e.message ?: "Unknown error"}")
+                android.util.Log.e("AuthViewModel", "Error verifying phone OTP: ${e.message}", e)
+            } finally {
+                _verifyingPhoneOtp.value = false
+            }
+        }
+    }
+    
+    fun resetOtpState() {
+        _emailOtpSent.value = false
+        _phoneOtpSent.value = false
+        _emailOtpVerified.value = false
+        _phoneOtpVerified.value = false
     }
 }

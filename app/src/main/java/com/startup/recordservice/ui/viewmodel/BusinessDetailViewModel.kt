@@ -89,12 +89,24 @@ class BusinessDetailViewModel @Inject constructor(
                 // Load dishes for each plate
                 val dishesMap = mutableMapOf<String, List<DishResponse>>()
                 platesList.forEach { plate ->
-                    dishRepository.getPlateDishes(plate.plateId)
+                    val plateId = plate.plateId
+                    if (plateId.isNullOrBlank()) {
+                        android.util.Log.w(
+                            "BusinessDetailViewModel",
+                            "Skipping dishes load: plateId is null or blank for plate ${plate.plateName}"
+                        )
+                        return@forEach
+                    }
+
+                    dishRepository.getPlateDishes(plateId)
                         .onSuccess { dishes ->
-                            dishesMap[plate.plateId] = dishes
+                            dishesMap[plateId] = dishes
                         }
                         .onFailure { exception ->
-                            android.util.Log.e("BusinessDetailViewModel", "Failed to load dishes for plate ${plate.plateId}: ${exception.message}")
+                            android.util.Log.e(
+                                "BusinessDetailViewModel",
+                                "Failed to load dishes for plate $plateId: ${exception.message}"
+                            )
                         }
                 }
                 _plateDishes.value = dishesMap

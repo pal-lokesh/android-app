@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.startup.recordservice.ui.viewmodel.AuthViewModel
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,9 +46,50 @@ fun SignupScreen(
     var userType by remember { mutableStateOf("CLIENT") }
     
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val emailVerified by viewModel.emailVerified.collectAsStateWithLifecycle()
+    val phoneVerified by viewModel.phoneVerified.collectAsStateWithLifecycle()
+    val emailVerifying by viewModel.emailVerifying.collectAsStateWithLifecycle()
+    val phoneVerifying by viewModel.phoneVerifying.collectAsStateWithLifecycle()
+    
+    // OTP states
+    val emailOtpSent by viewModel.emailOtpSent.collectAsStateWithLifecycle()
+    val phoneOtpSent by viewModel.phoneOtpSent.collectAsStateWithLifecycle()
+    val emailOtpVerified by viewModel.emailOtpVerified.collectAsStateWithLifecycle()
+    val phoneOtpVerified by viewModel.phoneOtpVerified.collectAsStateWithLifecycle()
+    val sendingEmailOtp by viewModel.sendingEmailOtp.collectAsStateWithLifecycle()
+    val sendingPhoneOtp by viewModel.sendingPhoneOtp.collectAsStateWithLifecycle()
+    val verifyingEmailOtp by viewModel.verifyingEmailOtp.collectAsStateWithLifecycle()
+    val verifyingPhoneOtp by viewModel.verifyingPhoneOtp.collectAsStateWithLifecycle()
+    
+    // OTP input fields
+    var emailOtp by remember { mutableStateOf("") }
+    var phoneOtp by remember { mutableStateOf("") }
     
     // Track if navigation has already happened to prevent multiple calls
     var hasNavigated by remember { mutableStateOf(false) }
+    
+    // Auto-verify on email/phone change (with debounce)
+    LaunchedEffect(email) {
+        if (email.isNotBlank() && android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            kotlinx.coroutines.delay(800) // Debounce 800ms
+            viewModel.verifyEmail(email.trim())
+        } else if (email.isBlank()) {
+            viewModel.resetVerification()
+            viewModel.resetOtpState()
+            emailOtp = ""
+        }
+    }
+    
+    LaunchedEffect(phoneNumber) {
+        if (phoneNumber.isNotBlank() && phoneNumber.length >= 10) {
+            kotlinx.coroutines.delay(800) // Debounce 800ms
+            viewModel.verifyPhone(phoneNumber.trim())
+        } else if (phoneNumber.isBlank()) {
+            viewModel.resetVerification()
+            viewModel.resetOtpState()
+            phoneOtp = ""
+        }
+    }
     
     LaunchedEffect(uiState) {
         if (!hasNavigated) {
@@ -259,51 +301,321 @@ fun SignupScreen(
                     )
                     
                     // Email
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = { Text("Email Address") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Email,
-                                contentDescription = null,
-                                tint = Color(0xFFf5576c)
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = email,
+                            onValueChange = { email = it },
+                            label = { Text("Email Address") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Email,
+                                    contentDescription = null,
+                                    tint = Color(0xFFf5576c)
+                                )
+                            },
+                            trailingIcon = {
+                                when {
+                                    emailVerifying -> {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                    }
+                                    emailVerified == true -> {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Verified",
+                                            tint = Color(0xFF4CAF50)
+                                        )
+                                    }
+                                    emailVerified == false -> {
+                                        Icon(
+                                            imageVector = Icons.Default.Cancel,
+                                            contentDescription = "Already exists",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = uiState !is com.startup.recordservice.ui.viewmodel.AuthUiState.Loading,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = when {
+                                    emailVerified == true -> Color(0xFF4CAF50)
+                                    emailVerified == false -> MaterialTheme.colorScheme.error
+                                    else -> Color(0xFFf5576c)
+                                },
+                                unfocusedBorderColor = when {
+                                    emailVerified == true -> Color(0xFF4CAF50).copy(alpha = 0.5f)
+                                    emailVerified == false -> MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                                    else -> Color(0xFFf5576c).copy(alpha = 0.5f)
+                                }
                             )
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        enabled = uiState !is com.startup.recordservice.ui.viewmodel.AuthUiState.Loading,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFFf5576c),
-                            unfocusedBorderColor = Color(0xFFf5576c).copy(alpha = 0.5f)
                         )
-                    )
+                        if (emailVerified == false) {
+                            Text(
+                                text = "Email already registered",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else if (emailVerified == true) {
+                            Text(
+                                text = "Email available",
+                                color = Color(0xFF4CAF50),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        
+                        // Verify Email Button
+                        if (emailVerified == true && !emailOtpVerified) {
+                            TextButton(
+                                onClick = { viewModel.sendEmailOtp(email.trim()) },
+                                enabled = !sendingEmailOtp && email.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                if (sendingEmailOtp) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text(
+                                        text = "Verify Email",
+                                        color = Color(0xFF2196F3),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                        
+                        // Email OTP Section
+                        if (emailOtpSent && !emailOtpVerified) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedTextField(
+                                        value = emailOtp,
+                                        onValueChange = { if (it.length <= 6) emailOtp = it },
+                                        label = { Text("Enter OTP") },
+                                        placeholder = { Text("6 digit code") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        enabled = !verifyingEmailOtp,
+                                        maxLines = 1
+                                    )
+                                    Button(
+                                        onClick = { viewModel.verifyEmailOtp(email.trim(), emailOtp) },
+                                        enabled = !verifyingEmailOtp && emailOtp.length == 6,
+                                        modifier = Modifier.height(56.dp)
+                                    ) {
+                                        if (verifyingEmailOtp) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                color = Color.White
+                                            )
+                                        } else {
+                                            Text("Verify", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = "OTP sent to your email. Enter the code to verify.",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                        
+                        if (emailOtpVerified) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4CAF50),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Email verified",
+                                    color = Color(0xFF4CAF50),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
                     
                     // Phone Number
-                    OutlinedTextField(
-                        value = phoneNumber,
-                        onValueChange = { phoneNumber = it },
-                        label = { Text("Phone Number") },
-                        placeholder = { Text("+91 1234567890 or 1234567890") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Phone,
-                                contentDescription = null,
-                                tint = Color(0xFFf5576c)
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = phoneNumber,
+                            onValueChange = { phoneNumber = it },
+                            label = { Text("Phone Number") },
+                            placeholder = { Text("+91 1234567890 or 1234567890") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Phone,
+                                    contentDescription = null,
+                                    tint = Color(0xFFf5576c)
+                                )
+                            },
+                            trailingIcon = {
+                                when {
+                                    phoneVerifying -> {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                    }
+                                    phoneVerified == true -> {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Verified",
+                                            tint = Color(0xFF4CAF50)
+                                        )
+                                    }
+                                    phoneVerified == false -> {
+                                        Icon(
+                                            imageVector = Icons.Default.Cancel,
+                                            contentDescription = "Already exists",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            enabled = uiState !is com.startup.recordservice.ui.viewmodel.AuthUiState.Loading,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = when {
+                                    phoneVerified == true -> Color(0xFF4CAF50)
+                                    phoneVerified == false -> MaterialTheme.colorScheme.error
+                                    else -> Color(0xFFf5576c)
+                                },
+                                unfocusedBorderColor = when {
+                                    phoneVerified == true -> Color(0xFF4CAF50).copy(alpha = 0.5f)
+                                    phoneVerified == false -> MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                                    else -> Color(0xFFf5576c).copy(alpha = 0.5f)
+                                }
                             )
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        enabled = uiState !is com.startup.recordservice.ui.viewmodel.AuthUiState.Loading,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFFf5576c),
-                            unfocusedBorderColor = Color(0xFFf5576c).copy(alpha = 0.5f)
                         )
-                    )
+                        if (phoneVerified == false) {
+                            Text(
+                                text = "Phone number already registered",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else if (phoneVerified == true) {
+                            Text(
+                                text = "Phone number available",
+                                color = Color(0xFF4CAF50),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        
+                        // Verify Phone Button
+                        if (phoneVerified == true && !phoneOtpVerified) {
+                            TextButton(
+                                onClick = { viewModel.sendPhoneOtp(phoneNumber.trim()) },
+                                enabled = !sendingPhoneOtp && phoneNumber.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                if (sendingPhoneOtp) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text(
+                                        text = "Verify Phone",
+                                        color = Color(0xFF2196F3),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                        
+                        // Phone OTP Section
+                        if (phoneOtpSent && !phoneOtpVerified) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    OutlinedTextField(
+                                        value = phoneOtp,
+                                        onValueChange = { if (it.length <= 6) phoneOtp = it },
+                                        label = { Text("Enter OTP") },
+                                        placeholder = { Text("6 digit code") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        enabled = !verifyingPhoneOtp,
+                                        maxLines = 1
+                                    )
+                                    Button(
+                                        onClick = { viewModel.verifyPhoneOtp(phoneNumber.trim(), phoneOtp) },
+                                        enabled = !verifyingPhoneOtp && phoneOtp.length == 6,
+                                        modifier = Modifier.height(56.dp)
+                                    ) {
+                                        if (verifyingPhoneOtp) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                color = Color.White
+                                            )
+                                        } else {
+                                            Text("Verify", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = "OTP sent to your phone. Enter the code to verify.",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                        
+                        if (phoneOtpVerified) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF4CAF50),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Phone verified",
+                                    color = Color(0xFF4CAF50),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
                     
                     // Password
                     OutlinedTextField(
@@ -403,6 +715,10 @@ fun SignupScreen(
                                  phoneNumber.isNotBlank() &&
                                  password.isNotBlank() &&
                                  password == confirmPassword &&
+                                 emailVerified == true &&
+                                 phoneVerified == true &&
+                                 emailOtpVerified &&
+                                 phoneOtpVerified &&
                                  uiState !is com.startup.recordservice.ui.viewmodel.AuthUiState.Loading,
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(

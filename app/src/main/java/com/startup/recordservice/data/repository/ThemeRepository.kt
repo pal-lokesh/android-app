@@ -2,6 +2,7 @@ package com.startup.recordservice.data.repository
 
 import android.util.Log
 import com.startup.recordservice.data.api.ApiService
+import com.startup.recordservice.data.local.TokenManager
 import com.startup.recordservice.data.model.ThemeResponse
 import com.startup.recordservice.data.model.ThemeRequest
 import javax.inject.Inject
@@ -9,7 +10,8 @@ import javax.inject.Singleton
 
 @Singleton
 class ThemeRepository @Inject constructor(
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val tokenManager: TokenManager
 ) {
     companion object {
         private const val TAG = "ThemeRepository"
@@ -113,7 +115,8 @@ class ThemeRepository @Inject constructor(
     suspend fun createTheme(request: ThemeRequest): Result<ThemeResponse> {
         return try {
             Log.d(TAG, "Creating theme: ${request.themeName}")
-            val response = apiService.createTheme(request)
+            val vendorPhone = tokenManager.getUserPhone()
+            val response = apiService.createTheme(request, vendorPhone)
             
             if (response.isSuccessful && response.body() != null) {
                 Log.d(TAG, "Successfully created theme")
@@ -136,7 +139,8 @@ class ThemeRepository @Inject constructor(
     suspend fun updateTheme(themeId: String, request: ThemeRequest): Result<ThemeResponse> {
         return try {
             Log.d(TAG, "Updating theme: $themeId")
-            val response = apiService.updateTheme(themeId, request)
+            val vendorPhone = tokenManager.getUserPhone()
+            val response = apiService.updateTheme(themeId, request, vendorPhone)
             
             if (response.isSuccessful && response.body() != null) {
                 Log.d(TAG, "Successfully updated theme")
@@ -159,7 +163,8 @@ class ThemeRepository @Inject constructor(
     suspend fun deleteTheme(themeId: String): Result<Unit> {
         return try {
             Log.d(TAG, "Deleting theme: $themeId")
-            val response = apiService.deleteTheme(themeId)
+            val vendorPhone = tokenManager.getUserPhone()
+            val response = apiService.deleteTheme(themeId, vendorPhone)
             
             if (response.isSuccessful) {
                 Log.d(TAG, "Successfully deleted theme")

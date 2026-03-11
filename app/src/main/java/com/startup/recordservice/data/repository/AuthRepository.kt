@@ -129,4 +129,162 @@ class AuthRepository @Inject constructor(
     fun getCurrentUserId(): String? {
         return tokenManager.getUserId()
     }
+    
+    suspend fun checkPhone(phoneNumber: String): Result<Boolean> {
+        return try {
+            Log.d(TAG, "Checking if phone number exists: $phoneNumber")
+            val response = apiService.checkPhone(phoneNumber)
+            
+            if (response.isSuccessful && response.body() != null) {
+                val exists = response.body()!!.exists
+                Log.d(TAG, "Phone check result: exists=$exists")
+                Result.success(exists)
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to check phone (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to check phone (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Phone check failed: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking phone: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun checkEmail(email: String): Result<Boolean> {
+        return try {
+            Log.d(TAG, "Checking if email exists: $email")
+            val response = apiService.checkEmail(email)
+            
+            if (response.isSuccessful && response.body() != null) {
+                val exists = response.body()!!.exists
+                Log.d(TAG, "Email check result: exists=$exists")
+                Result.success(exists)
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to check email (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to check email (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Email check failed: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking email: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun sendPhoneOtp(phoneNumber: String): Result<String> {
+        return try {
+            Log.d(TAG, "Sending OTP to phone: $phoneNumber")
+            val response = apiService.sendSignupPhoneOtp(SendOtpRequest(phoneNumber = phoneNumber))
+            
+            if (response.isSuccessful && response.body() != null) {
+                val otpResponse = response.body()!!
+                Log.d(TAG, "OTP sent successfully to phone")
+                Result.success(otpResponse.message ?: "OTP sent successfully")
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to send OTP (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to send OTP (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Failed to send OTP: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending OTP: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun sendEmailOtp(email: String): Result<String> {
+        return try {
+            Log.d(TAG, "Sending OTP to email: $email")
+            val response = apiService.sendSignupEmailOtp(SendOtpRequest(email = email))
+            
+            if (response.isSuccessful && response.body() != null) {
+                val otpResponse = response.body()!!
+                Log.d(TAG, "OTP sent successfully to email")
+                Result.success(otpResponse.message ?: "OTP sent successfully")
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to send OTP (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to send OTP (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Failed to send OTP: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending OTP: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun verifyPhoneOtp(phoneNumber: String, otp: String): Result<Boolean> {
+        return try {
+            Log.d(TAG, "Verifying OTP for phone: $phoneNumber")
+            val response = apiService.verifySignupPhoneOtp(
+                VerifyOtpRequest(phoneNumber = phoneNumber, code = otp)
+            )
+            
+            if (response.isSuccessful && response.body() != null) {
+                val otpResponse = response.body()!!
+                val verified = otpResponse.verified ?: true
+                if (verified) {
+                    Log.d(TAG, "Phone OTP verified successfully")
+                    Result.success(true)
+                } else {
+                    Result.failure(Exception(otpResponse.message ?: "Invalid OTP"))
+                }
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to verify OTP (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to verify OTP (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Failed to verify OTP: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error verifying OTP: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+    
+    suspend fun verifyEmailOtp(email: String, otp: String): Result<Boolean> {
+        return try {
+            Log.d(TAG, "Verifying OTP for email: $email")
+            val response = apiService.verifySignupEmailOtp(
+                VerifyOtpRequest(email = email, code = otp)
+            )
+            
+            if (response.isSuccessful && response.body() != null) {
+                val otpResponse = response.body()!!
+                val verified = otpResponse.verified ?: true
+                if (verified) {
+                    Log.d(TAG, "Email OTP verified successfully")
+                    Result.success(true)
+                } else {
+                    Result.failure(Exception(otpResponse.message ?: "Invalid OTP"))
+                }
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to verify OTP (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to verify OTP (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Failed to verify OTP: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error verifying OTP: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
 }

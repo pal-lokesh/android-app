@@ -3,12 +3,14 @@ package com.startup.recordservice.data.repository
 import android.util.Log
 import com.startup.recordservice.data.api.ApiService
 import com.startup.recordservice.data.model.PlateResponse
+import com.startup.recordservice.data.local.TokenManager
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class PlateRepository @Inject constructor(
-    private val apiService: ApiService
+    private val apiService: ApiService,
+    private val tokenManager: TokenManager
 ) {
     companion object {
         private const val TAG = "PlateRepository"
@@ -57,6 +59,66 @@ class PlateRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching plate: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getAllPlates(): Result<List<PlateResponse>> {
+        return try {
+            Log.d(TAG, "Fetching all plates")
+            val response = apiService.getAllPlates()
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "Failed to fetch plates (HTTP ${response.code()})"
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createPlate(request: PlateResponse): Result<PlateResponse> {
+        return try {
+            val vendorPhone = tokenManager.getUserPhone()
+            val response = apiService.createPlate(request, vendorPhone)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "Failed to create plate (HTTP ${response.code()})"
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updatePlate(plateId: String, request: PlateResponse): Result<PlateResponse> {
+        return try {
+            val vendorPhone = tokenManager.getUserPhone()
+            val response = apiService.updatePlate(plateId, request, vendorPhone)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "Failed to update plate (HTTP ${response.code()})"
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deletePlate(plateId: String): Result<Unit> {
+        return try {
+            val vendorPhone = tokenManager.getUserPhone()
+            val response = apiService.deletePlate(plateId, vendorPhone)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "Failed to delete plate (HTTP ${response.code()})"
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
             Result.failure(e)
         }
     }

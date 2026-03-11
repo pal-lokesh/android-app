@@ -460,14 +460,17 @@ fun InventoryCard(item: InventoryResponse) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
+                    val name = item.itemName.orEmpty().ifBlank { "Unknown Item" }
                     Text(
-                        text = item.itemName?.takeIf { it.isNotBlank() } ?: "Unknown Item",
+                        text = name,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
-                    if (!item.category.isNullOrBlank()) {
+
+                    val category = item.category.orEmpty()
+                    if (category.isNotBlank()) {
                         Text(
-                            text = item.category ?: "",
+                            text = category,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -481,9 +484,10 @@ fun InventoryCard(item: InventoryResponse) {
                 )
             }
             
-            if (!item.description.isNullOrBlank()) {
+            val description = item.description.orEmpty()
+            if (description.isNotBlank()) {
                 Text(
-                    text = item.description ?: "",
+                    text = description,
                     style = MaterialTheme.typography.bodyMedium
                 )
             }

@@ -1,12 +1,23 @@
 package com.startup.recordservice.ui.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.startup.recordservice.data.local.TokenManager
 import com.startup.recordservice.data.model.BusinessResponse
+import com.startup.recordservice.data.model.BusinessCreateRequest
+import com.startup.recordservice.data.model.InventoryCreateRequest
+import com.startup.recordservice.data.model.InventoryResponse
 import com.startup.recordservice.data.model.OrderResponse
+import com.startup.recordservice.data.model.ThemeRequest
+import com.startup.recordservice.data.model.ThemeResponse
 import com.startup.recordservice.data.repository.BusinessRepository
+import com.startup.recordservice.data.repository.ImageRepository
+import com.startup.recordservice.data.repository.InventoryRepository
+import com.startup.recordservice.data.repository.InventoryImageRepository
 import com.startup.recordservice.data.repository.OrderRepository
+import com.startup.recordservice.data.repository.ThemeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,10 +37,15 @@ sealed class VendorUiState {
 
 @HiltViewModel
 class VendorViewModel @Inject constructor(
+    application: Application,
     private val businessRepository: BusinessRepository,
     private val orderRepository: OrderRepository,
+    private val inventoryRepository: InventoryRepository,
+    private val themeRepository: ThemeRepository,
+    private val imageRepository: ImageRepository,
+    private val inventoryImageRepository: InventoryImageRepository,
     private val tokenManager: TokenManager
-) : ViewModel() {
+) : AndroidViewModel(application) {
     
     private val _uiState = MutableStateFlow<VendorUiState>(VendorUiState.Idle)
     val uiState: StateFlow<VendorUiState> = _uiState.asStateFlow()
@@ -39,6 +55,33 @@ class VendorViewModel @Inject constructor(
     
     private val _orders = MutableStateFlow<List<OrderResponse>>(emptyList())
     val orders: StateFlow<List<OrderResponse>> = _orders.asStateFlow()
+    
+    // Inventory grouped by businessId for vendor inventory tab
+    private val _inventoryByBusiness =
+        MutableStateFlow<Map<String, List<InventoryResponse>>>(emptyMap())
+    val inventoryByBusiness: StateFlow<Map<String, List<InventoryResponse>>> =
+        _inventoryByBusiness.asStateFlow()
+
+    // Themes grouped by businessId for vendor theme tab
+    private val _themesByBusiness =
+        MutableStateFlow<Map<String, List<ThemeResponse>>>(emptyMap())
+    val themesByBusiness: StateFlow<Map<String, List<ThemeResponse>>> =
+        _themesByBusiness.asStateFlow()
+
+    // ThemeId -> first image URL (for vendor dashboard)
+    private val _themeImageUrls = MutableStateFlow<Map<String, String>>(emptyMap())
+    val themeImageUrls: StateFlow<Map<String, String>> = _themeImageUrls.asStateFlow()
+
+    // InventoryId -> first image URL (for vendor dashboard)
+    private val _inventoryImageUrls = MutableStateFlow<Map<String, String>>(emptyMap())
+    val inventoryImageUrls: StateFlow<Map<String, String>> = _inventoryImageUrls.asStateFlow()
+
+    // Image selection state for create screens
+    private val _themeImageUris = MutableStateFlow<List<Uri>>(emptyList())
+    val themeImageUris: StateFlow<List<Uri>> = _themeImageUris.asStateFlow()
+
+    private val _inventoryImageUris = MutableStateFlow<List<Uri>>(emptyList())
+    val inventoryImageUris: StateFlow<List<Uri>> = _inventoryImageUris.asStateFlow()
     
     init {
         // Don't load data in init - wait for explicit call after navigation
@@ -64,8 +107,10 @@ class VendorViewModel @Inject constructor(
                             _businesses.value = businessList
                             android.util.Log.d("VendorViewModel", "Loaded ${businessList.size} businesses")
                             
-                            // Load orders for all businesses
+                            // Load orders, inventory and themes for all businesses
                             loadOrdersForBusinesses(businessList)
+                            loadInventoryForBusinesses(businessList)
+                            loadThemesForBusinesses(businessList)
                         }
                         .onFailure { exception ->
                             android.util.Log.e("VendorViewModel", "Failed to load businesses: ${exception.message}")
@@ -83,6 +128,106 @@ class VendorViewModel @Inject constructor(
                     "Failed to load data: ${e.message ?: "Unknown error"}"
                 )
             }
+        }
+    }
+    
+    private suspend fun loadInventoryForBusinesses(businesses: List<BusinessResponse>) {
+        try {
+            val inventoryMap = mutableMapOf<String, List<InventoryResponse>>()
+            val imageUrlMap = mutableMapOf<String, String>()
+            
+            for (business in businesses) {
+                val businessId = business.businessId
+                if (businessId.isNullOrBlank()) {
+                    continue
+                }
+                
+                inventoryRepository.getBusinessInventory(businessId)
+                    .onSuccess { items ->
+                        inventoryMap[businessId] = items
+                        android.util.Log.d(
+                            "VendorViewModel",
+                            "Loaded ${items.size} inventory items for business $businessId"
+                        )
+                        // For each item, try to load its primary image
+                        items.forEach { inv ->
+                            val invId = inv.inventoryId
+                            if (!invId.isNullOrBlank()) {
+                                inventoryImageRepository.getInventoryImagesByInventoryId(invId)
+                                    .onSuccess { images ->
+                                        val primary = images.firstOrNull { it.isPrimary == true } ?: images.firstOrNull()
+                                        val url = primary?.imageUrl
+                                        if (!url.isNullOrBlank()) {
+                                            imageUrlMap[invId] = url
+                                        }
+                                    }
+                                    .onFailure { e ->
+                                        android.util.Log.e("VendorViewModel", "Failed to load inventory images for $invId: ${e.message}")
+                                    }
+                            }
+                        }
+                    }
+                    .onFailure { exception ->
+                        android.util.Log.e(
+                            "VendorViewModel",
+                            "Failed to load inventory for $businessId: ${exception.message}"
+                        )
+                    }
+            }
+            
+            _inventoryByBusiness.value = inventoryMap
+            _inventoryImageUrls.value = imageUrlMap
+        } catch (e: Exception) {
+            android.util.Log.e("VendorViewModel", "Error loading inventory: ${e.message}", e)
+        }
+    }
+
+    private suspend fun loadThemesForBusinesses(businesses: List<BusinessResponse>) {
+        try {
+            val themeMap = mutableMapOf<String, List<ThemeResponse>>()
+            val imageUrlMap = mutableMapOf<String, String>()
+
+            for (business in businesses) {
+                val businessId = business.businessId
+                if (businessId.isNullOrBlank()) continue
+
+                themeRepository.getBusinessThemes(businessId)
+                    .onSuccess { themes ->
+                        themeMap[businessId] = themes
+                        android.util.Log.d(
+                            "VendorViewModel",
+                            "Loaded ${themes.size} themes for business $businessId"
+                        )
+                        // For each theme, try to load its primary image
+                        themes.forEach { theme ->
+                            val themeId = theme.themeId
+                            if (!themeId.isNullOrBlank()) {
+                                imageRepository.getImagesByThemeId(themeId)
+                                    .onSuccess { images ->
+                                        val primary = images.firstOrNull { it.isPrimary == true } ?: images.firstOrNull()
+                                        val url = primary?.imageUrl
+                                        if (!url.isNullOrBlank()) {
+                                            imageUrlMap[themeId] = url
+                                        }
+                                    }
+                                    .onFailure { e ->
+                                        android.util.Log.e("VendorViewModel", "Failed to load theme images for $themeId: ${e.message}")
+                                    }
+                            }
+                        }
+                    }
+                    .onFailure { exception ->
+                        android.util.Log.e(
+                            "VendorViewModel",
+                            "Failed to load themes for $businessId: ${exception.message}"
+                        )
+                    }
+            }
+
+            _themesByBusiness.value = themeMap
+            _themeImageUrls.value = imageUrlMap
+        } catch (e: Exception) {
+            android.util.Log.e("VendorViewModel", "Error loading themes: ${e.message}", e)
         }
     }
     
@@ -128,5 +273,305 @@ class VendorViewModel @Inject constructor(
     
     fun getCurrentUserId(): String? {
         return tokenManager.getUserPhone()
+    }
+
+    fun setThemeImageUris(uris: List<Uri>) {
+        _themeImageUris.value = uris.take(10)
+    }
+
+    fun setInventoryImageUris(uris: List<Uri>) {
+        _inventoryImageUris.value = uris.take(10)
+    }
+
+    fun removeThemeImage(uri: Uri) {
+        _themeImageUris.value = _themeImageUris.value.filterNot { it == uri }
+    }
+
+    fun removeInventoryImage(uri: Uri) {
+        _inventoryImageUris.value = _inventoryImageUris.value.filterNot { it == uri }
+    }
+
+    fun clearThemeImages() {
+        _themeImageUris.value = emptyList()
+    }
+
+    fun clearInventoryImages() {
+        _inventoryImageUris.value = emptyList()
+    }
+
+    fun updateInventory(
+        inventoryId: String,
+        request: InventoryCreateRequest,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = VendorUiState.Loading
+                inventoryRepository.updateInventory(inventoryId, request)
+                    .onSuccess {
+                        loadData()
+                        onSuccess()
+                    }
+                    .onFailure { e ->
+                        _uiState.value = VendorUiState.Error(e.message ?: "Failed to update inventory")
+                    }
+            } catch (e: Exception) {
+                _uiState.value = VendorUiState.Error(e.message ?: "Failed to update inventory")
+            }
+        }
+    }
+
+    fun deleteInventory(
+        inventoryId: String,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = VendorUiState.Loading
+                inventoryRepository.deleteInventory(inventoryId)
+                    .onSuccess {
+                        loadData()
+                        onSuccess()
+                    }
+                    .onFailure { e ->
+                        _uiState.value = VendorUiState.Error(e.message ?: "Failed to delete inventory")
+                    }
+            } catch (e: Exception) {
+                _uiState.value = VendorUiState.Error(e.message ?: "Failed to delete inventory")
+            }
+        }
+    }
+
+    fun updateTheme(
+        themeId: String,
+        request: ThemeRequest,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = VendorUiState.Loading
+                themeRepository.updateTheme(themeId, request)
+                    .onSuccess {
+                        loadData()
+                        onSuccess()
+                    }
+                    .onFailure { e ->
+                        _uiState.value = VendorUiState.Error(e.message ?: "Failed to update theme")
+                    }
+            } catch (e: Exception) {
+                _uiState.value = VendorUiState.Error(e.message ?: "Failed to update theme")
+            }
+        }
+    }
+
+    fun deleteTheme(
+        themeId: String,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = VendorUiState.Loading
+                themeRepository.deleteTheme(themeId)
+                    .onSuccess {
+                        loadData()
+                        onSuccess()
+                    }
+                    .onFailure { e ->
+                        _uiState.value = VendorUiState.Error(e.message ?: "Failed to delete theme")
+                    }
+            } catch (e: Exception) {
+                _uiState.value = VendorUiState.Error(e.message ?: "Failed to delete theme")
+            }
+        }
+    }
+
+    fun createBusiness(
+        request: BusinessCreateRequest,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = VendorUiState.Loading
+                businessRepository.createBusiness(request)
+                    .onSuccess {
+                        // Reload data so new business appears on dashboard
+                        loadData()
+                        onSuccess()
+                    }
+                    .onFailure { exception ->
+                        _uiState.value = VendorUiState.Error(
+                            exception.message ?: "Failed to create business"
+                        )
+                    }
+            } catch (e: Exception) {
+                _uiState.value = VendorUiState.Error(
+                    "Failed to create business: ${e.message ?: "Unknown error"}"
+                )
+            }
+        }
+    }
+
+    fun createInventory(
+        request: InventoryCreateRequest,
+        imageUris: List<Uri>,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = VendorUiState.Loading
+                inventoryRepository.createInventory(request)
+                    .onSuccess { createdInventory ->
+                        val context = getApplication<Application>().applicationContext
+                        val inventoryId = createdInventory.inventoryId
+
+                        if (inventoryId != null && imageUris.isNotEmpty()) {
+                            imageUris.forEachIndexed { index, uri ->
+                                val imageName = "${request.inventoryName}_${index}"
+                                imageRepository.uploadFile(context, uri, "inventory", inventoryId)
+                                    .onSuccess { imageUrl ->
+                                        val imageRequest = com.startup.recordservice.data.model.InventoryImageRequest(
+                                            inventoryId = inventoryId,
+                                            imageName = imageName,
+                                            imageUrl = imageUrl,
+                                            isPrimary = index == 0
+                                        )
+                                        inventoryImageRepository.createInventoryImage(imageRequest)
+                                            .onFailure { e ->
+                                                android.util.Log.e("VendorViewModel", "Failed to create image record for inventory $inventoryId: ${e.message}")
+                                            }
+                                    }
+                                    .onFailure { e ->
+                                        android.util.Log.e("VendorViewModel", "Failed to upload image for inventory $inventoryId: ${e.message}")
+                                    }
+                            }
+                        }
+
+                        loadData()
+                        clearInventoryImages()
+                        onSuccess()
+                    }
+                    .onFailure { exception ->
+                        _uiState.value = VendorUiState.Error(
+                            exception.message ?: "Failed to create inventory item"
+                        )
+                    }
+            } catch (e: Exception) {
+                _uiState.value = VendorUiState.Error(
+                    "Failed to create inventory item: ${e.message ?: "Unknown error"}"
+                )
+            }
+        }
+    }
+
+    fun createTheme(
+        request: ThemeRequest,
+        imageUris: List<Uri>,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = VendorUiState.Loading
+                themeRepository.createTheme(request)
+                    .onSuccess { createdTheme ->
+                        val themeId = createdTheme.themeId
+                        val context = getApplication<Application>().applicationContext
+
+                        if (themeId != null && imageUris.isNotEmpty()) {
+                            imageUris.forEachIndexed { index, uri ->
+                                val imageName = "${request.themeName}_${index}"
+                                imageRepository.uploadFile(context, uri, "themes", themeId)
+                                    .onSuccess { imageUrl ->
+                                        val imageRequest = com.startup.recordservice.data.model.ImageCreateRequest(
+                                            themeId = themeId,
+                                            imageName = imageName,
+                                            imageUrl = imageUrl,
+                                            isPrimary = index == 0
+                                        )
+                                        imageRepository.createImage(imageRequest)
+                                            .onFailure { e ->
+                                                android.util.Log.e("VendorViewModel", "Failed to create image record for theme $themeId: ${e.message}")
+                                            }
+                                    }
+                                    .onFailure { e ->
+                                        android.util.Log.e("VendorViewModel", "Failed to upload image for theme $themeId: ${e.message}")
+                                    }
+                            }
+                        }
+
+                        loadData()
+                        clearThemeImages()
+                        onSuccess()
+                    }
+                    .onFailure { exception ->
+                        _uiState.value = VendorUiState.Error(
+                            exception.message ?: "Failed to create theme"
+                        )
+                    }
+            } catch (e: Exception) {
+                _uiState.value = VendorUiState.Error(
+                    "Failed to create theme: ${e.message ?: "Unknown error"}"
+                )
+            }
+        }
+    }
+
+    fun updateThemeImages(
+        themeId: String,
+        imageUris: List<Uri>
+    ) {
+        viewModelScope.launch {
+            if (themeId.isBlank() || imageUris.isEmpty()) return@launch
+            val context = getApplication<Application>().applicationContext
+            imageUris.forEachIndexed { index, uri ->
+                val imageName = "theme_${themeId}_$index"
+                imageRepository.uploadFile(context, uri, "themes", themeId)
+                    .onSuccess { imageUrl ->
+                        val imageRequest = com.startup.recordservice.data.model.ImageCreateRequest(
+                            themeId = themeId,
+                            imageName = imageName,
+                            imageUrl = imageUrl,
+                            isPrimary = index == 0
+                        )
+                        imageRepository.createImage(imageRequest)
+                            .onFailure { e ->
+                                android.util.Log.e("VendorViewModel", "Failed to create image record for theme $themeId: ${e.message}")
+                            }
+                    }
+                    .onFailure { e ->
+                        android.util.Log.e("VendorViewModel", "Failed to upload image for theme $themeId: ${e.message}")
+                    }
+            }
+            loadData()
+        }
+    }
+
+    fun updateInventoryImages(
+        inventoryId: String,
+        imageUris: List<Uri>
+    ) {
+        viewModelScope.launch {
+            if (inventoryId.isBlank() || imageUris.isEmpty()) return@launch
+            val context = getApplication<Application>().applicationContext
+            imageUris.forEachIndexed { index, uri ->
+                val imageName = "inventory_${inventoryId}_$index"
+                imageRepository.uploadFile(context, uri, "inventory", inventoryId)
+                    .onSuccess { imageUrl ->
+                        val imageRequest = com.startup.recordservice.data.model.InventoryImageRequest(
+                            inventoryId = inventoryId,
+                            imageName = imageName,
+                            imageUrl = imageUrl,
+                            isPrimary = index == 0
+                        )
+                        inventoryImageRepository.createInventoryImage(imageRequest)
+                            .onFailure { e ->
+                                android.util.Log.e("VendorViewModel", "Failed to create image record for inventory $inventoryId: ${e.message}")
+                            }
+                    }
+                    .onFailure { e ->
+                        android.util.Log.e("VendorViewModel", "Failed to upload image for inventory $inventoryId: ${e.message}")
+                    }
+            }
+            loadData()
+        }
     }
 }

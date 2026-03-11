@@ -25,6 +25,23 @@ interface ApiService {
     @POST("auth/change-password")
     suspend fun changePassword(@Body request: ChangePasswordRequest): Response<MessageResponse>
     
+    // Signup OTP Verification (matches backend VerificationController)
+    // POST /api/verification/signup/email/send
+    @POST("verification/signup/email/send")
+    suspend fun sendSignupEmailOtp(@Body request: SendOtpRequest): Response<OtpResponse>
+    
+    // POST /api/verification/signup/phone/send
+    @POST("verification/signup/phone/send")
+    suspend fun sendSignupPhoneOtp(@Body request: SendOtpRequest): Response<OtpResponse>
+    
+    // POST /api/verification/signup/email/verify
+    @POST("verification/signup/email/verify")
+    suspend fun verifySignupEmailOtp(@Body request: VerifyOtpRequest): Response<OtpResponse>
+    
+    // POST /api/verification/signup/phone/verify
+    @POST("verification/signup/phone/verify")
+    suspend fun verifySignupPhoneOtp(@Body request: VerifyOtpRequest): Response<OtpResponse>
+    
     // Orders
     @GET("orders/user/{userId}")
     suspend fun getUserOrders(@Path("userId") userId: String): Response<List<OrderResponse>>
@@ -51,19 +68,153 @@ interface ApiService {
     @GET("businesses/{businessId}")
     suspend fun getBusiness(@Path("businessId") businessId: String): Response<BusinessResponse>
     
-    @GET("businesses/user/{phoneNumber}")
-    suspend fun getUserBusinesses(@Path("phoneNumber") phoneNumber: String): Response<List<BusinessResponse>>
+    // Backend exposes /api/businesses/phone/{phoneNumber} returning a single Business
+    @GET("businesses/phone/{phoneNumber}")
+    suspend fun getBusinessByPhone(@Path("phoneNumber") phoneNumber: String): Response<BusinessResponse>
+    
+    @POST("businesses")
+    suspend fun createBusiness(@Body request: BusinessCreateRequest): Response<BusinessResponse>
     
     // Plates
+    @GET("plates")
+    suspend fun getAllPlates(): Response<List<PlateResponse>>
+
     @GET("plates/business/{businessId}")
     suspend fun getBusinessPlates(@Path("businessId") businessId: String): Response<List<PlateResponse>>
     
     @GET("plates/{plateId}")
     suspend fun getPlate(@Path("plateId") plateId: String): Response<PlateResponse>
+
+    @POST("plates")
+    suspend fun createPlate(
+        @Body request: PlateResponse,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<PlateResponse>
+
+    @PUT("plates/{plateId}")
+    suspend fun updatePlate(
+        @Path("plateId") plateId: String,
+        @Body request: PlateResponse,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<PlateResponse>
+
+    @DELETE("plates/{plateId}")
+    suspend fun deletePlate(
+        @Path("plateId") plateId: String,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<MessageResponse>
     
     // Dishes
+    @GET("dishes")
+    suspend fun getAllDishes(): Response<List<DishResponse>>
+
+    @GET("dishes/{dishId}")
+    suspend fun getDish(@Path("dishId") dishId: String): Response<DishResponse>
+
+    @GET("dishes/business/{businessId}")
+    suspend fun getBusinessDishes(@Path("businessId") businessId: String): Response<List<DishResponse>>
+
     @GET("dishes/plate/{plateId}")
     suspend fun getPlateDishes(@Path("plateId") plateId: String): Response<List<DishResponse>>
+
+    @POST("dishes")
+    suspend fun createDish(
+        @Body request: DishResponse,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<DishResponse>
+
+    @PUT("dishes/{dishId}")
+    suspend fun updateDish(
+        @Path("dishId") dishId: String,
+        @Body request: DishResponse,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<DishResponse>
+
+    @DELETE("dishes/{dishId}")
+    suspend fun deleteDish(
+        @Path("dishId") dishId: String,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<MessageResponse>
+
+    // Availability
+    @POST("availability")
+    suspend fun createOrUpdateAvailability(@Body request: AvailabilityRequest): Response<AvailabilityResponse>
+
+    @GET("availability/item/{itemId}/type/{itemType}/date/{date}")
+    suspend fun getAvailability(
+        @Path("itemId") itemId: String,
+        @Path("itemType") itemType: String,
+        @Path("date") date: String
+    ): Response<AvailabilityResponse>
+
+    @GET("availability/item/{itemId}/type/{itemType}")
+    suspend fun getAvailabilitiesForItem(
+        @Path("itemId") itemId: String,
+        @Path("itemType") itemType: String
+    ): Response<List<AvailabilityResponse>>
+
+    @GET("availability/item/{itemId}/type/{itemType}/range")
+    suspend fun getAvailabilitiesInRange(
+        @Path("itemId") itemId: String,
+        @Path("itemType") itemType: String,
+        @Query("startDate") startDate: String,
+        @Query("endDate") endDate: String
+    ): Response<List<AvailabilityResponse>>
+
+    @GET("availability/business/{businessId}")
+    suspend fun getAvailabilitiesForBusiness(@Path("businessId") businessId: String): Response<List<AvailabilityResponse>>
+
+    @POST("availability/check")
+    suspend fun checkAvailability(@Body request: CheckAvailabilityRequest): Response<AvailabilityCheckResponse>
+
+    @GET("availability/item/{itemId}/type/{itemType}/date/{date}/quantity")
+    suspend fun getAvailableQuantity(
+        @Path("itemId") itemId: String,
+        @Path("itemType") itemType: String,
+        @Path("date") date: String
+    ): Response<AvailableQuantityResponse>
+
+    @DELETE("availability/item/{itemId}/type/{itemType}/date/{date}")
+    suspend fun deleteAvailability(
+        @Path("itemId") itemId: String,
+        @Path("itemType") itemType: String,
+        @Path("date") date: String
+    ): Response<MessageResponse>
+
+    @DELETE("availability/item/{itemId}/type/{itemType}")
+    suspend fun deleteAllAvailabilitiesForItem(
+        @Path("itemId") itemId: String,
+        @Path("itemType") itemType: String
+    ): Response<MessageResponse>
+
+    // Inventory Images
+    @POST("inventory/images")
+    suspend fun createInventoryImage(
+        @Body request: InventoryImageRequest,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<InventoryImageResponse>
+
+    @GET("inventory/images/inventory/{inventoryId}")
+    suspend fun getInventoryImagesByInventoryId(@Path("inventoryId") inventoryId: String): Response<List<InventoryImageResponse>>
+
+    @PUT("inventory/images/{imageId}")
+    suspend fun updateInventoryImage(
+        @Path("imageId") imageId: String,
+        @Body request: InventoryImageRequest,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<InventoryImageResponse>
+
+    @DELETE("inventory/images/{imageId}")
+    suspend fun deleteInventoryImage(
+        @Path("imageId") imageId: String,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<MessageResponse>
+
+    @PUT("inventory/images/{imageId}/primary")
+    suspend fun setPrimaryInventoryImage(
+        @Path("imageId") imageId: String,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<InventoryImageResponse>
     
     // Inventory
     @GET("inventory")
@@ -71,6 +222,25 @@ interface ApiService {
     
     @GET("inventory/business/{businessId}")
     suspend fun getBusinessInventory(@Path("businessId") businessId: String): Response<List<InventoryResponse>>
+    
+    @POST("inventory")
+    suspend fun createInventory(
+        @Body request: InventoryCreateRequest,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<InventoryResponse>
+
+    @PUT("inventory/{inventoryId}")
+    suspend fun updateInventory(
+        @Path("inventoryId") inventoryId: String,
+        @Body request: InventoryCreateRequest,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<InventoryResponse>
+
+    @DELETE("inventory/{inventoryId}")
+    suspend fun deleteInventory(
+        @Path("inventoryId") inventoryId: String,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<MessageResponse>
     
     // User
     @GET("users/{phoneNumber}")
@@ -111,14 +281,49 @@ interface ApiService {
     suspend fun getThemesByCategory(@Path("category") category: String): Response<List<ThemeResponse>>
     
     @POST("themes")
-    suspend fun createTheme(@Body request: ThemeRequest): Response<ThemeResponse>
+    suspend fun createTheme(
+        @Body request: ThemeRequest,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<ThemeResponse>
     
     @PUT("themes/{themeId}")
     suspend fun updateTheme(
         @Path("themeId") themeId: String,
-        @Body request: ThemeRequest
+        @Body request: ThemeRequest,
+        @Header("X-Vendor-Phone") vendorPhone: String?
     ): Response<ThemeResponse>
     
     @DELETE("themes/{themeId}")
-    suspend fun deleteTheme(@Path("themeId") themeId: String): Response<MessageResponse>
+    suspend fun deleteTheme(
+        @Path("themeId") themeId: String,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<MessageResponse>
+
+    // Theme images
+    @POST("images")
+    suspend fun createThemeImage(
+        @Body request: ThemeImageCreateRequest,
+        @Header("X-Vendor-Phone") vendorPhone: String
+    ): Response<ThemeImageResponse>
+
+    @GET("images/theme/{themeId}")
+    suspend fun getImagesByThemeId(
+        @Path("themeId") themeId: String
+    ): Response<List<ImageResponse>>
+
+    // Generic images for themes/inventory
+    @POST("images")
+    suspend fun createImage(
+        @Body request: ImageCreateRequest,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<ImageResponse>
+
+    // File upload (used by Android for image uploads)
+    @Multipart
+    @POST("files/upload")
+    suspend fun uploadFile(
+        @Part file: okhttp3.MultipartBody.Part,
+        @Part("category") category: okhttp3.RequestBody,
+        @Part("itemId") itemId: okhttp3.RequestBody
+    ): Response<FileUploadResponse>
 }
