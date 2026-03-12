@@ -2,6 +2,7 @@ package com.startup.recordservice.ui.screens.vendor
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,7 +29,8 @@ enum class VendorTab {
     DASHBOARD,
     ORDERS,
     THEME,
-    INVENTORY
+    INVENTORY,
+    AVAILABILITY
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,9 +41,11 @@ fun VendorDashboardScreen(
     onCreateBusinessClick: () -> Unit = {},
     onAddInventoryClick: () -> Unit = {},
     onAddThemeClick: () -> Unit = {},
+    onDashboardClick: () -> Unit = {},
     onOrdersClick: () -> Unit = {},
     onInventoryTabClick: () -> Unit = {},
     onThemeTabClick: () -> Unit = {},
+    onAvailabilityClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
     currentTab: VendorTab = VendorTab.DASHBOARD
 ) {
@@ -53,6 +57,11 @@ fun VendorDashboardScreen(
     val themeImageUrls by viewModel.themeImageUrls.collectAsStateWithLifecycle()
     val inventoryImageUrls by viewModel.inventoryImageUrls.collectAsStateWithLifecycle()
 
+    var statusDialogOrder by remember { mutableStateOf<com.startup.recordservice.data.model.OrderResponse?>(null) }
+    var statusDialogStatus by remember { mutableStateOf("PENDING") }
+    var statusDialogError by remember { mutableStateOf<String?>(null) }
+    var statusDialogLoading by remember { mutableStateOf(false) }
+
     var showInvDialog by remember { mutableStateOf(false) }
     var invDialogMode by remember { mutableStateOf("VIEW") } // VIEW | EDIT | DELETE
     var selectedInv by remember { mutableStateOf<InventoryResponse?>(null) }
@@ -60,6 +69,10 @@ fun VendorDashboardScreen(
     var showThemeDialog by remember { mutableStateOf(false) }
     var themeDialogMode by remember { mutableStateOf("VIEW") } // VIEW | EDIT | DELETE
     var selectedTheme by remember { mutableStateOf<ThemeResponse?>(null) }
+
+    var showBusinessDialog by remember { mutableStateOf(false) }
+    var businessDialogMode by remember { mutableStateOf("VIEW") } // VIEW | EDIT | DELETE
+    var selectedBusiness by remember { mutableStateOf<com.startup.recordservice.data.model.BusinessResponse?>(null) }
     
     // Load data when screen is first displayed
     LaunchedEffect(Unit) {
@@ -74,6 +87,9 @@ fun VendorDashboardScreen(
                     IconButton(onClick = { /* TODO: Navigate to notifications */ }) {
                         Icon(Icons.Default.Notifications, contentDescription = "Notifications")
                     }
+                    IconButton(onClick = onAvailabilityClick) {
+                        Icon(Icons.Default.CalendarMonth, contentDescription = "Availability")
+                    }
                     IconButton(onClick = onProfileClick) {
                         Icon(Icons.Default.AccountCircle, contentDescription = "Profile")
                     }
@@ -81,32 +97,14 @@ fun VendorDashboardScreen(
             )
         },
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = currentTab == VendorTab.DASHBOARD,
-                    onClick = { /* Already on dashboard */ },
-                    icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
-                    label = { Text("Dashboard") }
-                )
-                NavigationBarItem(
-                    selected = currentTab == VendorTab.ORDERS,
-                    onClick = onOrdersClick,
-                    icon = { Icon(Icons.Default.Receipt, contentDescription = "Orders") },
-                    label = { Text("Orders") }
-                )
-                NavigationBarItem(
-                    selected = currentTab == VendorTab.THEME,
-                    onClick = onThemeTabClick,
-                    icon = { Icon(Icons.Default.ColorLens, contentDescription = "Themes") },
-                    label = { Text("Themes") }
-                )
-                NavigationBarItem(
-                    selected = currentTab == VendorTab.INVENTORY,
-                    onClick = onInventoryTabClick,
-                    icon = { Icon(Icons.Default.Inventory, contentDescription = "Inventory") },
-                    label = { Text("Inventory") }
-                )
-            }
+            VendorBottomNav(
+                currentTab = currentTab,
+                onDashboardClick = onDashboardClick,
+                onOrdersClick = onOrdersClick,
+                onThemeTabClick = onThemeTabClick,
+                onInventoryTabClick = onInventoryTabClick,
+                onAvailabilityClick = onAvailabilityClick
+            )
         },
         floatingActionButton = {
             FloatingActionButton(
@@ -348,6 +346,111 @@ fun VendorDashboardScreen(
             }
         }
 
+        // Business dialog (view / edit / delete)
+        if (showBusinessDialog && selectedBusiness != null) {
+            val business = selectedBusiness!!
+            when (businessDialogMode) {
+                "DELETE" -> {
+                    AlertDialog(
+                        onDismissRequest = { showBusinessDialog = false },
+                        title = { Text("Delete Business") },
+                        text = { Text("Are you sure you want to delete '${business.businessName ?: "this business"}'? This cannot be undone.") },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    val id = business.businessId.orEmpty()
+                                    if (id.isNotBlank()) {
+                                        viewModel.deleteBusiness(id) { result ->
+                                            result.onSuccess { showBusinessDialog = false }
+                                            // errors already exposed via uiState
+                                        }
+                                    } else {
+                                        showBusinessDialog = false
+                                    }
+                                }
+                            ) { Text("Delete") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showBusinessDialog = false }) { Text("Cancel") }
+                        }
+                    )
+                }
+                "EDIT" -> {
+                    var name by remember(business.businessId) { mutableStateOf(business.businessName.orEmpty()) }
+                    var desc by remember(business.businessId) { mutableStateOf(business.description.orEmpty()) }
+                    var category by remember(business.businessId) { mutableStateOf(business.category.orEmpty()) }
+                    var address by remember(business.businessId) { mutableStateOf(business.address.orEmpty()) }
+                    var phone by remember(business.businessId) { mutableStateOf(business.phoneNumber.orEmpty()) }
+                    var email by remember(business.businessId) { mutableStateOf(business.email.orEmpty()) }
+
+                    AlertDialog(
+                        onDismissRequest = { showBusinessDialog = false },
+                        title = { Text("Edit Business") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
+                                OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("Description") })
+                                OutlinedTextField(value = category, onValueChange = { category = it }, label = { Text("Category") })
+                                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") })
+                                OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Phone") })
+                                OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") })
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    viewModel.updateBusiness(
+                                        business = business,
+                                        updatedName = name,
+                                        updatedDescription = desc,
+                                        updatedCategory = category,
+                                        updatedAddress = address,
+                                        updatedPhone = phone,
+                                        updatedEmail = email
+                                    ) { result ->
+                                        result.onSuccess { showBusinessDialog = false }
+                                        // errors handled via uiState
+                                    }
+                                },
+                                enabled = name.isNotBlank() && email.isNotBlank()
+                            ) { Text("Save") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showBusinessDialog = false }) { Text("Cancel") }
+                        }
+                    )
+                }
+                else -> {
+                    AlertDialog(
+                        onDismissRequest = { showBusinessDialog = false },
+                        title = { Text(business.businessName ?: "Business Details") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (!business.category.isNullOrBlank()) {
+                                    Text("Category: ${business.category}")
+                                }
+                                if (!business.description.isNullOrBlank()) {
+                                    Text("Description: ${business.description}")
+                                }
+                                if (!business.address.isNullOrBlank()) {
+                                    Text("Address: ${business.address}")
+                                }
+                                if (!business.phoneNumber.isNullOrBlank()) {
+                                    Text("Phone: ${business.phoneNumber}")
+                                }
+                                if (!business.email.isNullOrBlank()) {
+                                    Text("Email: ${business.email}")
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showBusinessDialog = false }) { Text("Close") }
+                        }
+                    )
+                }
+            }
+        }
+
         when (uiState) {
             is com.startup.recordservice.ui.viewmodel.VendorUiState.Loading -> {
                 Box(
@@ -400,7 +503,9 @@ fun VendorDashboardScreen(
                             text = when (currentTab) {
                                 VendorTab.DASHBOARD -> "Vendor Dashboard"
                                 VendorTab.ORDERS -> "Orders"
+                                VendorTab.THEME -> "Themes"
                                 VendorTab.INVENTORY -> "Inventory"
+                                VendorTab.AVAILABILITY -> "Availability"
                             },
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
@@ -487,31 +592,44 @@ fun VendorDashboardScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(
-                                            text = business.businessName ?: "Unknown Business",
-                                            style = MaterialTheme.typography.titleLarge,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        if (business.isActive) {
-                                            Surface(
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                shape = MaterialTheme.shapes.small
-                                            ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = business.businessName ?: "Unknown Business",
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            if (!business.category.isNullOrEmpty()) {
                                                 Text(
-                                                    text = "Active",
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                                    style = MaterialTheme.typography.labelSmall
+                                                    text = business.category ?: "",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(top = 4.dp)
                                                 )
                                             }
                                         }
-                                    }
-                                    if (!business.category.isNullOrEmpty()) {
-                                        Text(
-                                            text = business.category ?: "",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(top = 4.dp)
-                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            IconButton(onClick = {
+                                                selectedBusiness = business
+                                                businessDialogMode = "VIEW"
+                                                showBusinessDialog = true
+                                            }) {
+                                                Icon(Icons.Default.Visibility, contentDescription = "View business")
+                                            }
+                                            IconButton(onClick = {
+                                                selectedBusiness = business
+                                                businessDialogMode = "EDIT"
+                                                showBusinessDialog = true
+                                            }) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit business")
+                                            }
+                                            IconButton(onClick = {
+                                                selectedBusiness = business
+                                                businessDialogMode = "DELETE"
+                                                showBusinessDialog = true
+                                            }) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete business")
+                                            }
+                                        }
                                     }
                                     if (!business.description.isNullOrEmpty()) {
                                         Text(
@@ -554,9 +672,15 @@ fun VendorDashboardScreen(
                                 modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
                             )
                         }
-                        items(orders.take(5)) { order ->
+                        items(orders) { order ->
                             Card(
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        statusDialogOrder = order
+                                        statusDialogStatus = (order.status ?: "PENDING").uppercase()
+                                        statusDialogError = null
+                                    }
                             ) {
                                 Column(
                                     modifier = Modifier.padding(16.dp)
@@ -893,6 +1017,78 @@ fun VendorDashboardScreen(
                     CircularProgressIndicator()
                 }
             }
+        }
+
+        // Order status update dialog
+        val orderForDialog = statusDialogOrder
+        if (orderForDialog != null) {
+            AlertDialog(
+                onDismissRequest = { if (!statusDialogLoading) statusDialogOrder = null },
+                title = { Text("Update Order Status") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Order #${orderForDialog.orderId?.toString()?.take(8) ?: "N/A"}")
+                        Text("Current: ${orderForDialog.status ?: "UNKNOWN"}")
+                        Spacer(Modifier.height(4.dp))
+                        ExposedDropdownMenuBox(
+                            expanded = false,
+                            onExpandedChange = { /* simple text field below instead of dropdown for now */ }
+                        ) {
+                            // Simple buttons list instead of true dropdown to avoid extra state
+                        }
+                        val statuses = listOf("PENDING", "CONFIRMED", "PREPARING", "READY", "DELIVERED", "CANCELLED")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            statuses.chunked((statuses.size + 1) / 2).forEach { chunk ->
+                                Column {
+                                    chunk.forEach { s ->
+                                        FilterChip(
+                                            selected = statusDialogStatus == s,
+                                            onClick = { statusDialogStatus = s },
+                                            label = { Text(s) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (statusDialogError != null) {
+                            Text(statusDialogError!!, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !statusDialogLoading,
+                        onClick = {
+                            val id = orderForDialog.orderId
+                            if (id == null) {
+                                statusDialogError = "Order ID missing"
+                                return@TextButton
+                            }
+                            statusDialogLoading = true
+                            statusDialogError = null
+                            viewModel.updateOrderStatus(id, statusDialogStatus) { result ->
+                                statusDialogLoading = false
+                                result.onSuccess {
+                                    statusDialogOrder = null
+                                }.onFailure { e ->
+                                    statusDialogError = e.message ?: "Failed to update status"
+                                }
+                            }
+                        }
+                    ) {
+                        Text(if (statusDialogLoading) "Updating…" else "Update")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !statusDialogLoading,
+                        onClick = { statusDialogOrder = null }
+                    ) { Text("Cancel") }
+                }
+            )
         }
     }
 }

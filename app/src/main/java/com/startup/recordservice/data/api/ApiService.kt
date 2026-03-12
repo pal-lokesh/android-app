@@ -45,6 +45,10 @@ interface ApiService {
     // Orders
     @GET("orders/user/{userId}")
     suspend fun getUserOrders(@Path("userId") userId: String): Response<List<OrderResponse>>
+
+    // Vendor-side: get orders for a specific business (matches web: GET /orders/business/{businessId})
+    @GET("orders/business/{businessId}")
+    suspend fun getBusinessOrders(@Path("businessId") businessId: String): Response<List<OrderResponse>>
     
     @POST("orders")
     suspend fun createOrder(@Body request: OrderRequest): Response<OrderResponse>
@@ -53,6 +57,13 @@ interface ApiService {
     suspend fun updateOrderStatus(
         @Path("orderId") orderId: String,
         @Body request: UpdateStatusRequest
+    ): Response<OrderResponse>
+
+    // Web uses query param: PUT /api/orders/{orderId}/status?status=CANCELLED
+    @PUT("orders/{orderId}/status")
+    suspend fun updateOrderStatusQuery(
+        @Path("orderId") orderId: String,
+        @Query("status") status: String
     ): Response<OrderResponse>
     
     @PUT("orders/{orderId}/amount")
@@ -68,12 +79,25 @@ interface ApiService {
     @GET("businesses/{businessId}")
     suspend fun getBusiness(@Path("businessId") businessId: String): Response<BusinessResponse>
     
-    // Backend exposes /api/businesses/phone/{phoneNumber} returning a single Business
-    @GET("businesses/phone/{phoneNumber}")
-    suspend fun getBusinessByPhone(@Path("phoneNumber") phoneNumber: String): Response<BusinessResponse>
+    // Backend exposes /api/businesses/vendor/{phoneNumber} returning a list of businesses for a vendor
+    @GET("businesses/vendor/{phoneNumber}")
+    suspend fun getBusinessesByVendorPhone(@Path("phoneNumber") phoneNumber: String): Response<List<BusinessResponse>>
     
     @POST("businesses")
     suspend fun createBusiness(@Body request: BusinessCreateRequest): Response<BusinessResponse>
+
+    @PUT("businesses/{businessId}")
+    suspend fun updateBusiness(
+        @Path("businessId") businessId: String,
+        @Body request: BusinessCreateRequest,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<BusinessResponse>
+
+    @DELETE("businesses/{businessId}")
+    suspend fun deleteBusiness(
+        @Path("businessId") businessId: String,
+        @Header("X-Vendor-Phone") vendorPhone: String?
+    ): Response<MessageResponse>
     
     // Plates
     @GET("plates")
@@ -255,6 +279,28 @@ interface ApiService {
     
     @GET("notifications/vendor/{businessId}")
     suspend fun getVendorNotifications(@Path("businessId") businessId: String): Response<List<NotificationResponse>>
+
+    // Client Notifications (date-wise stock + order events) - matches backend ClientNotificationController
+    @GET("client-notifications/client/{clientPhone}")
+    suspend fun getClientNotificationsByClient(@Path("clientPhone") clientPhone: String): Response<List<ClientNotificationResponse>>
+
+    @GET("client-notifications/client/{clientPhone}/unread-count")
+    suspend fun getClientUnreadCount(@Path("clientPhone") clientPhone: String): Response<Int>
+
+    @PUT("client-notifications/{notificationId}/mark-read")
+    suspend fun markClientNotificationRead(@Path("notificationId") notificationId: Long): Response<MessageResponse>
+
+    @PUT("client-notifications/client/{clientPhone}/mark-all-read")
+    suspend fun markAllClientNotificationsRead(@Path("clientPhone") clientPhone: String): Response<MessageResponse>
+
+    @DELETE("client-notifications/{notificationId}")
+    suspend fun deleteClientNotification(@Path("notificationId") notificationId: Long): Response<MessageResponse>
+
+    @GET("client-notifications/client/{clientPhone}/recent")
+    suspend fun getClientRecentNotifications(@Path("clientPhone") clientPhone: String): Response<List<ClientNotificationResponse>>
+
+    @GET("client-notifications/client/{clientPhone}/with-count")
+    suspend fun getClientNotificationsWithCount(@Path("clientPhone") clientPhone: String): Response<ClientNotificationsWithCountResponse>
     
     // Ratings
     @GET("ratings/client/{phoneNumber}")
@@ -262,6 +308,18 @@ interface ApiService {
     
     @POST("ratings")
     suspend fun createRating(@Body request: RatingRequest): Response<RatingResponse>
+
+    // Stock notifications (subscribe when date-wise availability is 0)
+    @POST("stock-notifications/subscribe")
+    suspend fun subscribeStockNotification(@Body request: StockSubscribeRequest): Response<StockNotificationResponse>
+
+    @GET("stock-notifications/check")
+    suspend fun checkStockSubscription(
+        @Query("userId") userId: String,
+        @Query("itemId") itemId: String,
+        @Query("itemType") itemType: String,
+        @Query("requestedDate") requestedDate: String? = null
+    ): Response<StockSubscriptionCheckResponse>
     
     // Products
     @GET("products")

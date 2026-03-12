@@ -14,6 +14,10 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +57,15 @@ import com.startup.recordservice.data.model.ThemeResponse
 import com.startup.recordservice.data.util.UrlResolver
 import com.startup.recordservice.ui.viewmodel.ExploreViewModel
 import com.startup.recordservice.ui.viewmodel.ExploreCartItem
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.DialogProperties
 
 @Composable
 fun ClientExploreScreen(
@@ -103,14 +117,17 @@ fun ExploreScreen(
         }
     ) { padding ->
             if (showCart) {
-                CartScreen(
-                    items = cartItems,
-                    onClose = { showCart = false },
-                    onClearCart = { viewModel.clearCart() },
-                    onIncreaseQuantity = { itemId, itemType -> viewModel.increaseItemQuantity(itemId, itemType) },
-                    onDecreaseQuantity = { itemId, itemType -> viewModel.decreaseItemQuantity(itemId, itemType) },
-                    onRemoveItem = { itemId, itemType -> viewModel.removeItemFromCart(itemId, itemType) }
-                )
+                // Respect Scaffold padding so the cart UI doesn't render under the top bar
+                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    CartScreen(
+                        items = cartItems,
+                        onClose = { showCart = false },
+                        onClearCart = { viewModel.clearCart() },
+                        onIncreaseQuantity = { itemId, itemType -> viewModel.increaseItemQuantity(itemId, itemType) },
+                        onDecreaseQuantity = { itemId, itemType -> viewModel.decreaseItemQuantity(itemId, itemType) },
+                        onRemoveItem = { itemId, itemType -> viewModel.removeItemFromCart(itemId, itemType) }
+                    )
+                }
             } else when (uiState) {
                 is com.startup.recordservice.ui.viewmodel.ExploreUiState.Loading -> {
                     Box(
@@ -792,6 +809,7 @@ fun DishSection(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CartScreen(
     items: List<ExploreCartItem>,
@@ -799,8 +817,37 @@ fun CartScreen(
     onClearCart: () -> Unit,
     onIncreaseQuantity: (String, String) -> Unit,
     onDecreaseQuantity: (String, String) -> Unit,
-    onRemoveItem: (String, String) -> Unit
+    onRemoveItem: (String, String) -> Unit,
+    viewModel: ExploreViewModel = hiltViewModel()
 ) {
+    var showCheckout by remember { mutableStateOf(false) }
+    var placingOrder by remember { mutableStateOf(false) }
+    var orderError by remember { mutableStateOf<String?>(null) }
+    var orderSuccess by remember { mutableStateOf<String?>(null) }
+
+    var customerName by remember { mutableStateOf("") }
+    var customerEmail by remember { mutableStateOf("") }
+    var customerPhone by remember { mutableStateOf("") }
+    var deliveryAddress by remember { mutableStateOf("") }
+    var specialNotes by remember { mutableStateOf("") }
+
+    val dateFormatter = remember { DateTimeFormatter.ISO_LOCAL_DATE }
+    val datePickerState = rememberDatePickerState()
+    var deliveryDateText by remember { mutableStateOf<String?>(null) }
+    var showDeliveryDateDialog by remember { mutableStateOf(false) }
+
+    // Per-item booking date dialog (matches web DatePickerDialog behavior)
+    var showBookingDateDialog by remember { mutableStateOf(false) }
+    var bookingTarget by remember { mutableStateOf<ExploreCartItem?>(null) }
+    val bookingDatePickerState = rememberDatePickerState()
+    var bookingAvailableQty by remember { mutableStateOf<Int?>(null) }
+    var bookingChecking by remember { mutableStateOf(false) }
+    var bookingError by remember { mutableStateOf<String?>(null) }
+    var bookingSubscribed by remember { mutableStateOf(false) }
+    var bookingCheckingSub by remember { mutableStateOf(false) }
+    var showNotifyDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -879,12 +926,46 @@ fun CartScreen(
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
-                                if (cartItem.price > 0.0) {
+                                Text(
+                                    text = "₹${String.format("%.2f", cartItem.price)} each",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                // Booking date row (web: per item booking date is editable)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(top = 4.dp)
+                                ) {
                                     Text(
-                                        text = "₹${String.format("%.2f", cartItem.price)} each",
+                                        text = cartItem.bookingDate?.let { "Date: $it" } ?: "Date: Not set",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    TextButton(
+                                        onClick = {
+                                            bookingTarget = cartItem
+                                            bookingAvailableQty = null
+                                            bookingError = null
+                                            bookingSubscribed = false
+                                            showNotifyDialog = false
+                                            showBookingDateDialog = true
+                                        },
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("Edit")
+                                    }
+                                    if (cartItem.bookingDate != null) {
+                                        TextButton(
+                                            onClick = {
+                                                viewModel.setBookingDate(cartItem.id, cartItem.type, null)
+                                            },
+                                            contentPadding = PaddingValues(0.dp)
+                                        ) {
+                                            Text("Clear")
+                                        }
+                                    }
                                 }
                             }
                             
@@ -949,14 +1030,12 @@ fun CartScreen(
                                 }
                                 
                                 // Subtotal
-                                if (cartItem.price > 0.0) {
-                                    Text(
-                                        text = "₹${String.format("%.2f", cartItem.price * cartItem.quantity)}",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
+                                Text(
+                                    text = "₹${String.format("%.2f", cartItem.price * cartItem.quantity)}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
                     }
@@ -1041,7 +1120,7 @@ fun CartScreen(
                     Text("Clear Cart")
                 }
                 Button(
-                    onClick = { /* TODO: Navigate to checkout */ },
+                    onClick = { showCheckout = true },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp),
@@ -1049,6 +1128,315 @@ fun CartScreen(
                 ) {
                     Text("Proceed to Checkout")
                 }
+            }
+        }
+    }
+
+    if (showBookingDateDialog && bookingTarget != null) {
+        val target = bookingTarget!!
+
+        // On open: init selected date
+        LaunchedEffect(target.id, target.type, target.bookingDate) {
+            val initial = target.bookingDate?.let { LocalDate.parse(it) } ?: LocalDate.now()
+            bookingDatePickerState.setSelection(
+                initial.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            )
+            bookingAvailableQty = null
+            bookingError = null
+            bookingSubscribed = false
+        }
+
+        // Debounced availability check (500ms) just like web
+        LaunchedEffect(target.id, target.type, bookingDatePickerState.selectedDateMillis) {
+            val millis = bookingDatePickerState.selectedDateMillis ?: return@LaunchedEffect
+            bookingChecking = true
+            bookingCheckingSub = false
+            bookingError = null
+            bookingAvailableQty = null
+            bookingSubscribed = false
+
+            delay(500)
+            val date = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate().format(dateFormatter)
+            val itemTypeLower = when (target.type.uppercase()) {
+                "THEME" -> "theme"
+                "INVENTORY" -> "inventory"
+                else -> target.type.lowercase()
+            }
+            viewModel.getAvailableQuantity(target.id, itemTypeLower, date)
+                .onSuccess { qty ->
+                    bookingAvailableQty = qty
+                    if (qty == 0) {
+                        val userId = viewModel.getCurrentUserId()
+                        val businessId = target.businessId
+                        if (!userId.isNullOrBlank() && !businessId.isNullOrBlank()) {
+                            bookingCheckingSub = true
+                            viewModel.isSubscribedForDate(
+                                userId = userId,
+                                itemId = target.id,
+                                itemTypeUpper = itemTypeLower.uppercase(),
+                                date = date
+                            ).onSuccess { sub ->
+                                bookingSubscribed = sub
+                            }
+                            bookingCheckingSub = false
+                        }
+                    }
+                }
+                .onFailure {
+                    bookingAvailableQty = 0
+                    bookingError = "Failed to check availability. Please try again."
+                }
+            bookingChecking = false
+        }
+
+        AlertDialog(
+            onDismissRequest = { showBookingDateDialog = false; bookingTarget = null },
+            title = { Text("Select Booking Date") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DatePicker(state = bookingDatePickerState, showModeToggle = false)
+                    if (bookingChecking) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text("Checking availability…", style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else if (bookingAvailableQty != null) {
+                        val qty = bookingAvailableQty!!
+                        if (qty > 0) {
+                            Text(
+                                text = "Available: $qty item(s) on ${bookingDatePickerState.selectedDateMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().format(dateFormatter) }}",
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Text(
+                                text = "Not available on the selected date.",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            if (bookingCheckingSub) {
+                                Text("Checking subscription…", style = MaterialTheme.typography.bodySmall)
+                            } else if (bookingSubscribed) {
+                                Text(
+                                    "You are already subscribed for notifications on this date.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                Text(
+                                    "You can still keep this item in your cart. You can also subscribe to be notified when it becomes available on this date.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Button(
+                                    onClick = {
+                                        val userId = viewModel.getCurrentUserId()
+                                        val businessId = target.businessId
+                                        val itemName = target.name
+                                        val millis = bookingDatePickerState.selectedDateMillis
+                                        val date = millis?.let {
+                                            Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().format(dateFormatter)
+                                        }
+                                        val itemTypeUpper = target.type.uppercase()
+
+                                        if (!userId.isNullOrBlank() && !businessId.isNullOrBlank() && !itemName.isNullOrBlank() && !date.isNullOrBlank()) {
+                                            bookingCheckingSub = true
+                                            bookingError = null
+                                            scope.launch {
+                                                viewModel.subscribeForDate(
+                                                    userId = userId,
+                                                    itemId = target.id,
+                                                    itemTypeUpper = itemTypeUpper,
+                                                    itemName = itemName,
+                                                    businessId = businessId,
+                                                    date = date
+                                                ).onSuccess {
+                                                    bookingSubscribed = true
+                                                    bookingError = "You will be notified if this item becomes available on $date."
+                                                }.onFailure { e ->
+                                                    bookingError = e.message ?: "Failed to subscribe for notifications."
+                                                }
+                                                bookingCheckingSub = false
+                                            }
+                                        } else {
+                                            bookingError = "Missing information to subscribe for notifications."
+                                        }
+                                    },
+                                    enabled = !bookingCheckingSub,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(if (bookingCheckingSub) "Subscribing…" else "Notify Me")
+                                }
+                            }
+                        }
+                    }
+                    if (bookingError != null) {
+                        Text(bookingError!!, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val millis = bookingDatePickerState.selectedDateMillis
+                        if (millis == null) {
+                            bookingError = "Please select a booking date."
+                            return@TextButton
+                        }
+                        val date = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate().format(dateFormatter)
+                        viewModel.setBookingDate(target.id, target.type, date)
+                        showBookingDateDialog = false
+                        bookingTarget = null
+                    }
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBookingDateDialog = false; bookingTarget = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showCheckout) {
+        AlertDialog(
+            onDismissRequest = { if (!placingOrder) showCheckout = false },
+            title = { Text("Checkout") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
+                    if (orderError != null) {
+                        Text(orderError!!, color = MaterialTheme.colorScheme.error)
+                    }
+                    if (orderSuccess != null) {
+                        Text(orderSuccess!!, color = MaterialTheme.colorScheme.primary)
+                    }
+
+                    OutlinedTextField(
+                        value = customerName,
+                        onValueChange = { customerName = it },
+                        label = { Text("Customer Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = customerEmail,
+                        onValueChange = { customerEmail = it },
+                        label = { Text("Customer Email") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = customerPhone,
+                        onValueChange = { customerPhone = it },
+                        label = { Text("Customer Phone") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = deliveryAddress,
+                        onValueChange = { deliveryAddress = it },
+                        label = { Text("Delivery Address") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text(
+                        text = "Delivery Date",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedButton(
+                        onClick = { showDeliveryDateDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(deliveryDateText ?: "Select date")
+                    }
+
+                    OutlinedTextField(
+                        value = specialNotes,
+                        onValueChange = { specialNotes = it },
+                        label = { Text("Special Notes (optional)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !placingOrder,
+                    onClick = {
+                        val date = deliveryDateText
+
+                        if (customerName.isBlank() || customerEmail.isBlank() || customerPhone.isBlank() || deliveryAddress.isBlank() || date.isNullOrBlank()) {
+                            orderError = "Please fill all required fields (including delivery date)."
+                            return@TextButton
+                        }
+
+                        placingOrder = true
+                        orderError = null
+                        orderSuccess = null
+
+                        // Place orders (one per business) with availability enforcement
+                        scope.launch {
+                            val res = viewModel.placeOrders(
+                                customerName = customerName.trim(),
+                                customerEmail = customerEmail.trim(),
+                                customerPhone = customerPhone.trim(),
+                                deliveryAddress = deliveryAddress.trim(),
+                                deliveryDate = date,
+                                specialNotes = specialNotes.trim().ifBlank { null }
+                            )
+                            placingOrder = false
+                            res.onSuccess { orders ->
+                                orderSuccess = "Order placed (${orders.size})"
+                                onClose()
+                            }.onFailure { e ->
+                                orderError = e.message ?: "Failed to place order"
+                            }
+                        }
+                    }
+                ) { Text(if (placingOrder) "Placing…" else "Place Order") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !placingOrder,
+                    onClick = { showCheckout = false }
+                ) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showDeliveryDateDialog) {
+        DatePickerDialog(
+            onDismissRequest = { showDeliveryDateDialog = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val millis = datePickerState.selectedDateMillis
+                        if (millis != null) {
+                            deliveryDateText = Instant.ofEpochMilli(millis)
+                                .atZone(ZoneId.systemDefault())
+                                .toLocalDate()
+                                .format(dateFormatter)
+                        }
+                        showDeliveryDateDialog = false
+                    }
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeliveryDateDialog = false }) { Text("Cancel") }
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            // Give the calendar enough width so day numbers don't get cramped/cut off on small screens.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                DatePicker(
+                    state = datePickerState,
+                    showModeToggle = false,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }

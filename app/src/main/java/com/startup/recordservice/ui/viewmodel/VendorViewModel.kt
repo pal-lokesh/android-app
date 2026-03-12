@@ -233,31 +233,34 @@ class VendorViewModel @Inject constructor(
     
     private suspend fun loadOrdersForBusinesses(businesses: List<BusinessResponse>) {
         try {
-            // For now, we'll load user orders. In the future, we can load orders per business
-            val userId = tokenManager.getUserPhone()
-            if (userId != null && userId.isNotBlank()) {
-                orderRepository.getUserOrders(userId)
-                    .onSuccess { orderList ->
-                        _orders.value = orderList
-                        _uiState.value = VendorUiState.Success(
-                            businesses = businesses,
-                            orders = orderList
+            // Match web behavior: vendors see orders per business, not per phone/user
+            val allOrders = mutableListOf<OrderResponse>()
+
+            for (business in businesses) {
+                val businessId = business.businessId
+                if (businessId.isNullOrBlank()) continue
+
+                orderRepository.getBusinessOrders(businessId)
+                    .onSuccess { ordersForBusiness ->
+                        android.util.Log.d(
+                            "VendorViewModel",
+                            "Loaded ${ordersForBusiness.size} orders for business $businessId"
+                        )
+                        allOrders += ordersForBusiness
+                    }
+                    .onFailure { e ->
+                        android.util.Log.e(
+                            "VendorViewModel",
+                            "Failed to load orders for business $businessId: ${e.message}"
                         )
                     }
-                    .onFailure { exception ->
-                        android.util.Log.e("VendorViewModel", "Failed to load orders: ${exception.message}")
-                        _uiState.value = VendorUiState.Success(
-                            businesses = businesses,
-                            orders = emptyList()
-                        )
-                    }
-            } else {
-                android.util.Log.w("VendorViewModel", "User ID is null or blank, skipping order load")
-                _uiState.value = VendorUiState.Success(
-                    businesses = businesses,
-                    orders = emptyList()
-                )
             }
+
+            _orders.value = allOrders
+            _uiState.value = VendorUiState.Success(
+                businesses = businesses,
+                orders = allOrders
+            )
         } catch (e: Exception) {
             android.util.Log.e("VendorViewModel", "Error loading orders: ${e.message}", e)
             _uiState.value = VendorUiState.Success(
@@ -273,6 +276,29 @@ class VendorViewModel @Inject constructor(
     
     fun getCurrentUserId(): String? {
         return tokenManager.getUserPhone()
+    }
+
+    fun updateOrderStatus(
+        orderId: Long,
+        newStatus: String,
+        onResult: (Result<OrderResponse>) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val result = orderRepository.updateOrderStatus(orderId.toString(), newStatus)
+                result
+                    .onSuccess { updated ->
+                        // Refresh orders so dashboards reflect new status
+                        loadData()
+                        onResult(Result.success(updated))
+                    }
+                    .onFailure { e ->
+                        onResult(Result.failure(e))
+                    }
+            } catch (e: Exception) {
+                onResult(Result.failure(e))
+            }
+        }
     }
 
     fun setThemeImageUris(uris: List<Uri>) {
@@ -408,6 +434,65 @@ class VendorViewModel @Inject constructor(
                     "Failed to create business: ${e.message ?: "Unknown error"}"
                 )
             }
+        }
+    }
+
+    fun updateBusiness(
+        business: BusinessResponse,
+        updatedName: String,
+        updatedDescription: String?,
+        updatedCategory: String?,
+        updatedAddress: String?,
+        updatedPhone: String?,
+        updatedEmail: String?,
+        onResult: (Result<Unit>) -> Unit
+    ) {
+        val businessId = business.businessId.orEmpty()
+        if (businessId.isBlank()) {
+            onResult(Result.failure(Exception("Business ID missing")))
+            return
+        }
+        val vendorPhone = tokenManager.getUserPhone()
+        val req = BusinessCreateRequest(
+            phoneNumber = vendorPhone ?: business.phoneNumber.orEmpty(),
+            businessName = updatedName,
+            businessDescription = updatedDescription ?: business.description,
+            businessCategory = updatedCategory ?: business.category,
+            businessAddress = updatedAddress ?: business.address,
+            businessPhone = updatedPhone ?: business.phoneNumber,
+            businessEmail = updatedEmail ?: business.email.orEmpty(),
+            minOrderAmount = null
+        )
+        viewModelScope.launch {
+            val result = businessRepository.updateBusiness(businessId, req, vendorPhone)
+            result
+                .onSuccess {
+                    loadData()
+                    onResult(Result.success(Unit))
+                }
+                .onFailure { e ->
+                    _uiState.value = VendorUiState.Error(e.message ?: "Failed to update business")
+                    onResult(Result.failure(e))
+                }
+        }
+    }
+
+    fun deleteBusiness(
+        businessId: String,
+        onResult: (Result<Unit>) -> Unit
+    ) {
+        val vendorPhone = tokenManager.getUserPhone()
+        viewModelScope.launch {
+            val result = businessRepository.deleteBusiness(businessId, vendorPhone)
+            result
+                .onSuccess {
+                    loadData()
+                    onResult(Result.success(Unit))
+                }
+                .onFailure { e ->
+                    _uiState.value = VendorUiState.Error(e.message ?: "Failed to delete business")
+                    onResult(Result.failure(e))
+                }
         }
     }
 

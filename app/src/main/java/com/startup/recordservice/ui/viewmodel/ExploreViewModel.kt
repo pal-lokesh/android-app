@@ -2,14 +2,21 @@ package com.startup.recordservice.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.startup.recordservice.data.local.CartStorage
+import com.startup.recordservice.data.local.TokenManager
 import com.startup.recordservice.data.model.BusinessResponse
 import com.startup.recordservice.data.model.ThemeResponse
 import com.startup.recordservice.data.model.InventoryResponse
+import com.startup.recordservice.data.model.OrderItemRequest
+import com.startup.recordservice.data.model.OrderRequest
 import com.startup.recordservice.data.repository.BusinessRepository
 import com.startup.recordservice.data.repository.ThemeRepository
 import com.startup.recordservice.data.repository.InventoryRepository
+import com.startup.recordservice.data.repository.AvailabilityRepository
 import com.startup.recordservice.data.repository.InventoryImageRepository
 import com.startup.recordservice.data.repository.ImageRepository
+import com.startup.recordservice.data.repository.OrderRepository
+import com.startup.recordservice.data.repository.StockNotificationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,8 +41,10 @@ data class ExploreCartItem(
     val price: Double,
     val type: String, // "THEME" or "INVENTORY"
     val businessId: String? = null,
+    val businessName: String? = null,
     val imageUrl: String? = null,
-    val quantity: Int = 1
+    val quantity: Int = 1,
+    val bookingDate: String? = null // yyyy-MM-dd (optional; if null, we may use deliveryDate)
 )
 
 @HiltViewModel
@@ -44,7 +53,12 @@ class ExploreViewModel @Inject constructor(
     private val themeRepository: ThemeRepository,
     private val inventoryRepository: InventoryRepository,
     private val inventoryImageRepository: InventoryImageRepository,
-    private val imageRepository: ImageRepository
+    private val imageRepository: ImageRepository,
+    private val orderRepository: OrderRepository,
+    private val availabilityRepository: AvailabilityRepository,
+    private val stockNotificationRepository: StockNotificationRepository,
+    private val tokenManager: TokenManager,
+    private val cartStorage: CartStorage
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow<ExploreUiState>(ExploreUiState.Loading)
@@ -85,6 +99,7 @@ class ExploreViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _uiState.value = ExploreUiState.Loading
+                restoreCartFromStorage()
                 
                 val businessesResult = businessRepository.getAllBusinesses()
                 val themesResult = themeRepository.getAllThemes()
@@ -152,6 +167,18 @@ class ExploreViewModel @Inject constructor(
             }
         }
     }
+
+    private fun restoreCartFromStorage() {
+        val userId = tokenManager.getUserPhone() ?: return
+        val stored = cartStorage.loadCart(userId)
+        _cartItems.value = stored
+        _cartCount.value = stored.sumOf { it.quantity }
+    }
+
+    private fun persistCartToStorage() {
+        val userId = tokenManager.getUserPhone() ?: return
+        cartStorage.saveCart(userId, _cartItems.value)
+    }
     
     fun setCategory(category: String) {
         _selectedCategory.value = category
@@ -211,18 +238,23 @@ class ExploreViewModel @Inject constructor(
             val existing = current[existingIndex]
             current[existingIndex] = existing.copy(quantity = existing.quantity + 1)
         } else {
+            val businessName = item.businessId?.let { bid ->
+                _businesses.value.firstOrNull { it.businessId == bid }?.businessName
+            }
             current += ExploreCartItem(
                 id = id,
                 name = item.itemName ?: "Inventory Item",
                 price = item.price,
                 type = "INVENTORY",
                 businessId = item.businessId,
+                businessName = businessName,
                 // imageUrl is resolved later via UrlResolver when displaying
                 quantity = 1
             )
         }
         _cartItems.value = current
         _cartCount.value = current.sumOf { it.quantity }
+        persistCartToStorage()
     }
 
     fun addThemeToCart(theme: ThemeResponse) {
@@ -235,18 +267,24 @@ class ExploreViewModel @Inject constructor(
             val existing = current[existingIndex]
             current[existingIndex] = existing.copy(quantity = existing.quantity + 1)
         } else {
+            val businessName = theme.businessId?.let { bid ->
+                _businesses.value.firstOrNull { it.businessId == bid }?.businessName
+            }
+            val numericPrice = themePriceFromThemeId(id)
             current += ExploreCartItem(
                 id = id,
                 name = theme.themeName ?: "Theme",
-                // Themes use priceRange string; use 0.0 for numeric price and show priceRange in UI
-                price = 0.0,
+                // Web parses numeric price from priceRange; do the same so totals/checkout match
+                price = numericPrice,
                 type = "THEME",
                 businessId = theme.businessId,
+                businessName = businessName,
                 quantity = 1
             )
         }
         _cartItems.value = current
         _cartCount.value = current.sumOf { it.quantity }
+        persistCartToStorage()
     }
 
     fun increaseItemQuantity(itemId: String, itemType: String) {
@@ -257,6 +295,7 @@ class ExploreViewModel @Inject constructor(
             current[index] = item.copy(quantity = item.quantity + 1)
             _cartItems.value = current
             _cartCount.value = current.sumOf { it.quantity }
+            persistCartToStorage()
         }
     }
 
@@ -265,31 +304,188 @@ class ExploreViewModel @Inject constructor(
         val index = current.indexOfFirst { it.id == itemId && it.type == itemType }
         if (index >= 0) {
             val item = current[index]
-            if (item.quantity > 1) {
-                current[index] = item.copy(quantity = item.quantity - 1)
-            } else {
-                // Remove item if quantity becomes 0
-                current.removeAt(index)
-            }
+            val newQty = item.quantity - 1
+            if (newQty <= 0) current.removeAt(index)
+            else current[index] = item.copy(quantity = newQty)
             _cartItems.value = current
             _cartCount.value = current.sumOf { it.quantity }
+            persistCartToStorage()
         }
     }
 
     fun removeItemFromCart(itemId: String, itemType: String) {
         val current = _cartItems.value.toMutableList()
-        val index = current.indexOfFirst { it.id == itemId && it.type == itemType }
-        if (index >= 0) {
-            current.removeAt(index)
-            _cartItems.value = current
-            _cartCount.value = current.sumOf { it.quantity }
-        }
+        current.removeAll { it.id == itemId && it.type == itemType }
+        _cartItems.value = current
+        _cartCount.value = current.sumOf { it.quantity }
+        persistCartToStorage()
     }
 
     fun clearCart() {
         _cartItems.value = emptyList()
         _cartCount.value = 0
+        val userId = tokenManager.getUserPhone()
+        if (!userId.isNullOrBlank()) cartStorage.clearCart(userId)
     }
+
+    fun setBookingDate(itemId: String, itemType: String, bookingDate: String?) {
+        val current = _cartItems.value.toMutableList()
+        val index = current.indexOfFirst { it.id == itemId && it.type == itemType }
+        if (index >= 0) {
+            val item = current[index]
+            current[index] = item.copy(bookingDate = bookingDate)
+            _cartItems.value = current
+            persistCartToStorage()
+        }
+    }
+
+    fun getCurrentUserId(): String? = tokenManager.getUserPhone()
+
+    suspend fun getAvailableQuantity(itemId: String, itemTypeLower: String, date: String): Result<Int> {
+        return availabilityRepository.getAvailableQuantity(itemId, itemTypeLower, date)
+            .map { it.availableQuantity }
+    }
+
+    suspend fun isSubscribedForDate(
+        userId: String,
+        itemId: String,
+        itemTypeUpper: String,
+        date: String
+    ): Result<Boolean> {
+        return stockNotificationRepository.isSubscribed(
+            userId = userId,
+            itemId = itemId,
+            itemType = itemTypeUpper,
+            requestedDate = date
+        )
+    }
+
+    suspend fun subscribeForDate(
+        userId: String,
+        itemId: String,
+        itemTypeUpper: String,
+        itemName: String,
+        businessId: String,
+        date: String
+    ): Result<Unit> {
+        return stockNotificationRepository.subscribe(
+            com.startup.recordservice.data.model.StockSubscribeRequest(
+                userId = userId,
+                itemId = itemId,
+                itemType = itemTypeUpper,
+                itemName = itemName,
+                businessId = businessId,
+                requestedDate = date
+            )
+        ).map { Unit }
+    }
+
+    private fun themePriceFromThemeId(themeId: String): Double {
+        val theme = _themes.value.firstOrNull { it.themeId == themeId } ?: return 0.0
+        val range = theme.priceRange ?: return 0.0
+        // Extract first numeric value (web does similar parse of priceRange)
+        val match = Regex("""(\d+(\.\d+)?)""").find(range)
+        return match?.value?.toDoubleOrNull() ?: 0.0
+    }
+
+    suspend fun placeOrders(
+        customerName: String,
+        customerEmail: String,
+        customerPhone: String,
+        deliveryAddress: String,
+        deliveryDate: String, // yyyy-MM-dd
+        specialNotes: String?
+    ): Result<List<com.startup.recordservice.data.model.OrderResponse>> {
+        val userId = tokenManager.getUserPhone()
+        if (userId.isNullOrBlank()) {
+            return Result.failure(Exception("User not logged in"))
+        }
+
+        val cart = _cartItems.value
+        if (cart.isEmpty()) return Result.failure(Exception("Cart is empty"))
+
+        // Group by businessId (match web behavior: one order per vendor)
+        val byBusiness = cart.groupBy { it.businessId ?: "" }.filterKeys { it.isNotBlank() }
+        if (byBusiness.isEmpty()) return Result.failure(Exception("Cart items missing businessId"))
+
+        return try {
+            val created = mutableListOf<com.startup.recordservice.data.model.OrderResponse>()
+            val failures = mutableListOf<String>()
+
+            for ((businessId, items) in byBusiness) {
+                // Availability enforcement per item (date-wise)
+                for (it in items) {
+                    val dateToCheck = it.bookingDate ?: deliveryDate
+                    val itemTypeLower = when (it.type.uppercase()) {
+                        "THEME" -> "theme"
+                        "INVENTORY" -> "inventory"
+                        else -> it.type.lowercase()
+                    }
+                    val availableQty = availabilityRepository
+                        .getAvailableQuantity(it.id, itemTypeLower, dateToCheck)
+                        .getOrNull()
+                        ?.availableQuantity
+                        ?: 0
+                    if (availableQty < it.quantity) {
+                        return Result.failure(
+                            Exception("${it.name} not available on $dateToCheck (available: $availableQty, requested: ${it.quantity})")
+                        )
+                    }
+                }
+
+                val orderItems = items.map { ci ->
+                    val itemTypeLower = when (ci.type.uppercase()) {
+                        "THEME" -> "theme"
+                        "INVENTORY" -> "inventory"
+                        else -> ci.type.lowercase()
+                    }
+                    val numericPrice = if (itemTypeLower == "theme" && ci.price <= 0.0) {
+                        themePriceFromThemeId(ci.id)
+                    } else ci.price
+
+                    OrderItemRequest(
+                        itemId = ci.id,
+                        itemName = ci.name,
+                        itemPrice = numericPrice,
+                        quantity = ci.quantity,
+                        itemType = itemTypeLower,
+                        businessId = businessId,
+                        businessName = ci.businessName,
+                        imageUrl = ci.imageUrl,
+                        bookingDate = ci.bookingDate,
+                        selectedDishes = null
+                    )
+                }
+
+                val req = OrderRequest(
+                    userId = userId,
+                    items = orderItems,
+                    customerName = customerName,
+                    customerEmail = customerEmail,
+                    customerPhone = customerPhone,
+                    deliveryAddress = deliveryAddress,
+                    deliveryDate = deliveryDate,
+                    specialNotes = specialNotes
+                )
+
+                val result = orderRepository.createOrder(req)
+                result.onSuccess { created += it }
+                    .onFailure { e -> failures += (e.message ?: "Order failed for business $businessId") }
+            }
+
+            if (created.isEmpty()) {
+                Result.failure(Exception(failures.joinToString("; ").ifBlank { "Failed to create order(s)" }))
+            } else {
+                // Clear cart on success (even partial success, match web's "partial success is ok")
+                clearCart()
+                Result.success(created)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // NOTE: cart mutations below are intentionally centralized above with persistence.
     
     fun refresh() {
         loadData()

@@ -129,6 +129,53 @@ class AuthRepository @Inject constructor(
     fun getCurrentUserId(): String? {
         return tokenManager.getUserId()
     }
+
+    suspend fun changePassword(currentPassword: String, newPassword: String): Result<Unit> {
+        return try {
+            Log.d(TAG, "Changing password for user: ${tokenManager.getUserPhone() ?: "unknown"}")
+            val response = apiService.changePassword(ChangePasswordRequest(currentPassword, newPassword))
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to change password (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to change password (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Change password failed: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error changing password: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteCurrentUser(): Result<Unit> {
+        val phone = tokenManager.getUserPhone()
+        if (phone.isNullOrBlank()) {
+            return Result.failure(Exception("User phone not available"))
+        }
+        return try {
+            Log.d(TAG, "Deleting user account for phone: $phone")
+            val response = apiService.deleteUser(phone)
+            if (response.isSuccessful) {
+                tokenManager.clear()
+                Result.success(Unit)
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to delete account (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to delete account (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Delete account failed: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting account: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
     
     suspend fun checkPhone(phoneNumber: String): Result<Boolean> {
         return try {

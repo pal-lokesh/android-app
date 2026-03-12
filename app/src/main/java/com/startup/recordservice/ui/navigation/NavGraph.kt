@@ -8,12 +8,16 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import androidx.navigation.NavOptionsBuilder
 import com.startup.recordservice.ui.screens.auth.LoginScreen
 import com.startup.recordservice.ui.screens.auth.SignupScreen
 import com.startup.recordservice.ui.screens.client.ClientDashboardScreen
 import com.startup.recordservice.ui.screens.client.ClientExploreScreen
+import com.startup.recordservice.ui.screens.client.ClientOrderHistoryScreen
 import com.startup.recordservice.ui.screens.client.ClientProfileScreen
 import com.startup.recordservice.ui.screens.client.BusinessDetailScreen
+import com.startup.recordservice.ui.screens.client.OrderDetailsScreen
+import com.startup.recordservice.ui.screens.vendor.AvailabilityManagementScreen
 import com.startup.recordservice.ui.screens.vendor.VendorDashboardScreen
 import com.startup.recordservice.ui.screens.vendor.VendorProfileScreen
 import com.startup.recordservice.ui.screens.vendor.VendorTab
@@ -30,9 +34,14 @@ sealed class Screen(val route: String) {
     object VendorOrders : Screen("vendor_orders")
     object VendorThemes : Screen("vendor_themes")
     object VendorInventory : Screen("vendor_inventory")
+    object VendorAvailability : Screen("vendor_availability")
     object VendorProfile : Screen("vendor_profile")
     object ClientExplore : Screen("client_explore")
     object ClientProfile : Screen("client_profile")
+    object ClientOrders : Screen("client_orders")
+    object ClientOrderDetails : Screen("client_order_details/{orderId}") {
+        fun createRoute(orderId: String) = "client_order_details/$orderId"
+    }
     object CreateBusiness : Screen("create_business")
     object CreateInventory : Screen("create_inventory")
     object CreateTheme : Screen("create_theme")
@@ -48,6 +57,14 @@ fun NavGraph(
     startDestination: String = Screen.Login.route,
     authViewModel: AuthViewModel = hiltViewModel()
 ) {
+    fun NavHostController.navigateVendor(route: String) {
+        navigate(route) {
+            launchSingleTop = true
+            restoreState = true
+            popUpTo(Screen.VendorDashboard.route) { saveState = true }
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = startDestination,
@@ -104,6 +121,9 @@ fun NavGraph(
                 onNavigateToExplore = {
                     navController.navigate(Screen.ClientExplore.route)
                 },
+                onNavigateToOrders = {
+                    navController.navigate(Screen.ClientOrders.route)
+                },
                 onBusinessClick = { businessId ->
                     try {
                         if (businessId.isNotBlank()) {
@@ -135,6 +155,26 @@ fun NavGraph(
                 onProfileClick = {
                     navController.navigate(Screen.ClientProfile.route)
                 }
+            )
+        }
+
+        composable(Screen.ClientOrders.route) {
+            ClientOrderHistoryScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onViewDetails = { orderId ->
+                    navController.navigate(Screen.ClientOrderDetails.createRoute(orderId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.ClientOrderDetails.route,
+            arguments = listOf(navArgument("orderId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
+            OrderDetailsScreen(
+                orderId = orderId,
+                onNavigateBack = { navController.popBackStack() }
             )
         }
         
@@ -170,14 +210,18 @@ fun NavGraph(
                 onAddThemeClick = {
                     navController.navigate(Screen.CreateTheme.route)
                 },
+                onDashboardClick = { /* already on dashboard */ },
+                onAvailabilityClick = {
+                    navController.navigateVendor(Screen.VendorAvailability.route)
+                },
                 onOrdersClick = {
-                    navController.navigate(Screen.VendorOrders.route)
+                    navController.navigateVendor(Screen.VendorOrders.route)
                 },
                 onInventoryTabClick = {
-                    navController.navigate(Screen.VendorInventory.route)
+                    navController.navigateVendor(Screen.VendorInventory.route)
                 },
                 onThemeTabClick = {
-                    navController.navigate(Screen.VendorThemes.route)
+                    navController.navigateVendor(Screen.VendorThemes.route)
                 },
                 onProfileClick = {
                     navController.navigate(Screen.VendorProfile.route)
@@ -204,12 +248,18 @@ fun NavGraph(
                 onAddThemeClick = {
                     navController.navigate(Screen.CreateTheme.route)
                 },
+                onDashboardClick = {
+                    navController.navigateVendor(Screen.VendorDashboard.route)
+                },
+                onAvailabilityClick = {
+                    navController.navigateVendor(Screen.VendorAvailability.route)
+                },
                 onOrdersClick = { /* already on orders tab */ },
                 onInventoryTabClick = {
-                    navController.navigate(Screen.VendorInventory.route)
+                    navController.navigateVendor(Screen.VendorInventory.route)
                 },
                 onThemeTabClick = {
-                    navController.navigate(Screen.VendorThemes.route)
+                    navController.navigateVendor(Screen.VendorThemes.route)
                 },
                 onProfileClick = {
                     navController.navigate(Screen.VendorProfile.route)
@@ -235,12 +285,18 @@ fun NavGraph(
                 onAddThemeClick = {
                     navController.navigate(Screen.CreateTheme.route)
                 },
+                onDashboardClick = {
+                    navController.navigateVendor(Screen.VendorDashboard.route)
+                },
+                onAvailabilityClick = {
+                    navController.navigateVendor(Screen.VendorAvailability.route)
+                },
                 onOrdersClick = {
-                    navController.navigate(Screen.VendorOrders.route)
+                    navController.navigateVendor(Screen.VendorOrders.route)
                 },
                 onInventoryTabClick = { /* already on inventory tab */ },
                 onThemeTabClick = {
-                    navController.navigate(Screen.VendorThemes.route)
+                    navController.navigateVendor(Screen.VendorThemes.route)
                 },
                 onProfileClick = {
                     navController.navigate(Screen.VendorProfile.route)
@@ -266,17 +322,34 @@ fun NavGraph(
                 onAddThemeClick = {
                     navController.navigate(Screen.CreateTheme.route)
                 },
+                onDashboardClick = {
+                    navController.navigateVendor(Screen.VendorDashboard.route)
+                },
+                onAvailabilityClick = {
+                    navController.navigateVendor(Screen.VendorAvailability.route)
+                },
                 onOrdersClick = {
-                    navController.navigate(Screen.VendorOrders.route)
+                    navController.navigateVendor(Screen.VendorOrders.route)
                 },
                 onInventoryTabClick = {
-                    navController.navigate(Screen.VendorInventory.route)
+                    navController.navigateVendor(Screen.VendorInventory.route)
                 },
                 onThemeTabClick = { /* already on theme tab */ },
                 onProfileClick = {
                     navController.navigate(Screen.VendorProfile.route)
                 },
                 currentTab = VendorTab.THEME
+            )
+        }
+
+        composable(Screen.VendorAvailability.route) {
+            AvailabilityManagementScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onDashboardClick = { navController.navigateVendor(Screen.VendorDashboard.route) },
+                onOrdersClick = { navController.navigateVendor(Screen.VendorOrders.route) },
+                onThemeTabClick = { navController.navigateVendor(Screen.VendorThemes.route) },
+                onInventoryTabClick = { navController.navigateVendor(Screen.VendorInventory.route) },
+                onAvailabilityClick = { /* already on availability */ }
             )
         }
 
@@ -317,6 +390,9 @@ fun NavGraph(
                     navController.navigate(Screen.Login.route) {
                         popUpTo(0) { inclusive = true }
                     }
+                },
+                onNavigateToOrders = {
+                    navController.navigate(Screen.ClientOrders.route)
                 }
             )
         }

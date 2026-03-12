@@ -48,5 +48,23 @@ class ClientProfileViewModel @Inject constructor(
             }
         }
     }
+
+    fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        onResult: (Result<Unit>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = authRepository.changePassword(currentPassword, newPassword)
+            onResult(result)
+        }
+    }
+
+    fun deleteAccount(onResult: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val result = authRepository.deleteCurrentUser()
+            onResult(result)
+        }
+    }
 }
 

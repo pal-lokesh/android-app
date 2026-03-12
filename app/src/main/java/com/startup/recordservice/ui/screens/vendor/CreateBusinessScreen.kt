@@ -31,6 +31,7 @@ fun CreateBusinessScreen(
     var businessPhone by remember { mutableStateOf("") }
     var businessEmail by remember { mutableStateOf("") }
     var minOrder by remember { mutableStateOf("") }
+    var localError by remember { mutableStateOf<String?>(null) }
 
     val uiState by viewModel.uiState.collectAsState()
 
@@ -59,6 +60,14 @@ fun CreateBusinessScreen(
                 fontWeight = FontWeight.Bold
             )
 
+            if (localError != null) {
+                Text(
+                    text = localError!!,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
@@ -77,12 +86,47 @@ fun CreateBusinessScreen(
                 maxLines = 4
             )
 
-            OutlinedTextField(
-                value = category,
-                onValueChange = { category = it },
-                label = { Text("Category (e.g. Catering)") },
-                modifier = Modifier.fillMaxWidth()
+            // Business category dropdown (matches web preset categories)
+            val categories = listOf(
+                "Catering",
+                "Decorations",
+                "Photography",
+                "Event Management",
+                "Tent House",
+                "Florist",
+                "Other"
             )
+            var categoryExpanded by remember { mutableStateOf(false) }
+
+            ExposedDropdownMenuBox(
+                expanded = categoryExpanded,
+                onExpandedChange = { categoryExpanded = !categoryExpanded }
+            ) {
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { },
+                    readOnly = true,
+                    label = { Text("Business Category") },
+                    modifier = Modifier
+                        .menuAnchor()
+                        .fillMaxWidth(),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) }
+                )
+                ExposedDropdownMenu(
+                    expanded = categoryExpanded,
+                    onDismissRequest = { categoryExpanded = false }
+                ) {
+                    categories.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            onClick = {
+                                category = option
+                                categoryExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
 
             OutlinedTextField(
                 value = address,
@@ -129,6 +173,15 @@ fun CreateBusinessScreen(
             Button(
                 onClick = {
                     val vendorPhone = viewModel.getCurrentUserId().orEmpty()
+                    if (vendorPhone.isBlank()) {
+                        localError = "You must be logged in as a vendor to create a business."
+                        return@Button
+                    }
+                    if (name.isBlank() || businessEmail.isBlank() || category.isBlank()) {
+                        localError = "Please fill Business Name, Business Email, and Category."
+                        return@Button
+                    }
+                    localError = null
                     val min = minOrder.toDoubleOrNull() ?: 0.0
                     val request = BusinessCreateRequest(
                         phoneNumber = vendorPhone,
@@ -143,7 +196,7 @@ fun CreateBusinessScreen(
                     )
                     viewModel.createBusiness(request, onSuccess = { onNavigateBack() })
                 },
-                enabled = name.isNotBlank() && businessEmail.isNotBlank(),
+                enabled = name.isNotBlank() && businessEmail.isNotBlank() && category.isNotBlank(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)

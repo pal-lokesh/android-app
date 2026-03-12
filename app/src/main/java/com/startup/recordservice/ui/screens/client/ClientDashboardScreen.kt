@@ -22,6 +22,7 @@ import com.startup.recordservice.ui.viewmodel.ClientViewModel
 fun ClientDashboardScreen(
     onLogout: () -> Unit,
     onNavigateToExplore: () -> Unit = {},
+    onNavigateToOrders: () -> Unit = {},
     onBusinessClick: (String) -> Unit = {},
     viewModel: ClientViewModel = hiltViewModel()
 ) {
@@ -67,7 +68,7 @@ fun ClientDashboardScreen(
                 )
                 NavigationBarItem(
                     selected = false,
-                    onClick = { /* TODO: Navigate to orders */ },
+                    onClick = onNavigateToOrders,
                     icon = { Icon(Icons.Default.Receipt, contentDescription = "Orders") },
                     label = { Text("Orders") }
                 )

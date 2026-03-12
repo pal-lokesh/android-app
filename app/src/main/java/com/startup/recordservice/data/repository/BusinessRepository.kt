@@ -64,32 +64,24 @@ class BusinessRepository @Inject constructor(
     
     suspend fun getUserBusinesses(phoneNumber: String): Result<List<BusinessResponse>> {
         return try {
-            Log.d(TAG, "Fetching businesses for user: $phoneNumber")
-            val response = apiService.getBusinessByPhone(phoneNumber)
-            
-            when {
-                response.isSuccessful && response.body() != null -> {
-                    val business = response.body()!!
-                    Log.d(TAG, "Successfully fetched business for user")
-                    Result.success(listOf(business))
+            Log.d(TAG, "Fetching businesses for vendor: $phoneNumber")
+            val response = apiService.getBusinessesByVendorPhone(phoneNumber)
+
+            if (response.isSuccessful && response.body() != null) {
+                val businesses = response.body()!!
+                Log.d(TAG, "Successfully fetched ${businesses.size} businesses for vendor")
+                Result.success(businesses)
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to fetch vendor businesses (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to fetch vendor businesses (HTTP ${response.code()}): ${e.message}"
                 }
-                // If no business exists yet for this vendor, backend returns 404 – treat as empty list
-                response.code() == 404 -> {
-                    Log.w(TAG, "No businesses found for user $phoneNumber (HTTP 404). Returning empty list.")
-                    Result.success(emptyList())
-                }
-                else -> {
-                    val errorBody = try {
-                        response.errorBody()?.string() ?: "Failed to fetch user businesses (HTTP ${response.code()})"
-                    } catch (e: Exception) {
-                        "Failed to fetch user businesses (HTTP ${response.code()}): ${e.message}"
-                    }
-                    Log.e(TAG, "Failed to fetch user businesses: $errorBody")
-                    Result.failure(Exception(errorBody))
-                }
+                Log.e(TAG, "Failed to fetch vendor businesses: $errorBody")
+                Result.failure(Exception(errorBody))
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error fetching user businesses: ${e.message}", e)
+            Log.e(TAG, "Error fetching vendor businesses: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -114,6 +106,48 @@ class BusinessRepository @Inject constructor(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error creating business: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateBusiness(businessId: String, request: BusinessCreateRequest, vendorPhone: String?): Result<BusinessResponse> {
+        return try {
+            Log.d(TAG, "Updating business $businessId for vendor: $vendorPhone")
+            val response = apiService.updateBusiness(businessId, request, vendorPhone)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to update business (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to update business (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Failed to update business: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating business: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteBusiness(businessId: String, vendorPhone: String?): Result<Unit> {
+        return try {
+            Log.d(TAG, "Deleting business $businessId for vendor: $vendorPhone")
+            val response = apiService.deleteBusiness(businessId, vendorPhone)
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to delete business (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to delete business (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Failed to delete business: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting business: ${e.message}", e)
             Result.failure(e)
         }
     }
