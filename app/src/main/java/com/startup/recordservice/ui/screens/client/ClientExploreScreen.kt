@@ -93,8 +93,11 @@ fun ExploreScreen(
     val cartItems by viewModel.cartItems.collectAsStateWithLifecycle()
     val inventoryImageUrls by viewModel.inventoryImageUrls.collectAsStateWithLifecycle()
     val themeImageUrls by viewModel.themeImageUrls.collectAsStateWithLifecycle()
+    val filterOptions by viewModel.filterOptions.collectAsStateWithLifecycle()
+    val activeFilterCount = viewModel.getActiveFilterCount()
     var searchText by remember { mutableStateOf("") }
     var showCart by remember { mutableStateOf(false) }
+    var showFilterDialog by remember { mutableStateOf(false) }
     
     LaunchedEffect(Unit) {
         viewModel.loadData()
@@ -110,8 +113,10 @@ fun ExploreScreen(
                 searchText = searchText,
                 onSearchChange = { searchText = it },
                 cartCount = cartCount,
+                filterCount = activeFilterCount,
                 onNotificationsClick = { /* TODO: Navigate to notifications */ },
                 onCartClick = { showCart = true },
+                onFilterClick = { showFilterDialog = true },
                 onProfileClick = onProfileClick
             )
         }
@@ -169,73 +174,115 @@ fun ExploreScreen(
                 }
 
                 is com.startup.recordservice.ui.viewmodel.ExploreUiState.Success -> {
-                val vendors = viewModel.getFilteredBusinesses()
-                val themes = viewModel.getFilteredThemes()
-                val inventory = viewModel.getFilteredInventory()
-                // Plates & Dishes data can be wired later; for now use empty lists
-                val plates: List<PlateResponse> = emptyList()
-                val dishes: List<DishResponse> = emptyList()
+                    val vendors = viewModel.getFilteredBusinesses()
+                    val themes = viewModel.getFilteredThemes()
+                    val inventory = viewModel.getFilteredInventory()
+                    // Plates & Dishes data can be wired later; for now use empty lists
+                    val plates: List<PlateResponse> = emptyList()
+                    val dishes: List<DishResponse> = emptyList()
 
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    item {
-                        EventCategorySection()
-                    }
-
-                    if (vendors.isNotEmpty()) {
-                        item {
-                            VendorSection(
-                                vendors = vendors,
-                            onBusinessClick = onBusinessClick
-                        )
-                        }
-                    }
-
-                    if (themes.isNotEmpty()) {
-                        item {
-                            ThemeSection(
-                                themes = themes,
-                                imageUrls = themeImageUrls,
-                                onAddToCart = { viewModel.addThemeToCart(it) }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                    ) {
+                        // Active Filters Chips
+                        if (activeFilterCount > 0) {
+                            com.startup.recordservice.ui.components.ActiveFiltersChips(
+                                filters = filterOptions,
+                                onRemoveFilter = { key ->
+                                    val updatedFilters = when (key) {
+                                        "eventType" -> filterOptions.copy(eventType = "all")
+                                        "category" -> filterOptions.copy(category = "all")
+                                        "location" -> filterOptions.copy(location = "all")
+                                        "budget" -> filterOptions.copy(budget = "all")
+                                        "sortBy" -> filterOptions.copy(sortBy = "default")
+                                        "minRating" -> filterOptions.copy(minRating = 0.0)
+                                        else -> filterOptions
+                                    }
+                                    viewModel.applyFilters(updatedFilters)
+                                },
+                                onClearAll = {
+                                    viewModel.resetFilters()
+                                },
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                             )
                         }
-                    }
+                        
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(20.dp)
+                        ) {
+                            item {
+                                EventCategorySection()
+                            }
 
-                    if (inventory.isNotEmpty()) {
-                        item {
-                            InventorySection(
-                                inventory = inventory,
-                                imageUrls = inventoryImageUrls,
-                                onAddToCart = { viewModel.addInventoryToCart(it) }
-                            )
-                        }
-                    }
+                            if (vendors.isNotEmpty()) {
+                                item {
+                                    VendorSection(
+                                        vendors = vendors,
+                                        onBusinessClick = onBusinessClick
+                                    )
+                                }
+                            }
 
-                    if (plates.isNotEmpty()) {
-                        item {
-                            PlateSection(
-                                plates = plates,
-                                onAddToCart = { /* TODO: implement plate cart */ }
-                            )
-                        }
-                    }
+                            if (themes.isNotEmpty()) {
+                                item {
+                                    ThemeSection(
+                                        themes = themes,
+                                        imageUrls = themeImageUrls,
+                                        onAddToCart = { viewModel.addThemeToCart(it) }
+                                    )
+                                }
+                            }
 
-                    if (dishes.isNotEmpty()) {
-                        item {
-                            DishSection(
-                                dishes = dishes,
-                                onAddToCart = { /* TODO: implement dish cart */ }
-                            )
+                            if (inventory.isNotEmpty()) {
+                                item {
+                                    InventorySection(
+                                        inventory = inventory,
+                                        imageUrls = inventoryImageUrls,
+                                        onAddToCart = { viewModel.addInventoryToCart(it) }
+                                    )
+                                }
+                            }
+
+                            if (plates.isNotEmpty()) {
+                                item {
+                                    PlateSection(
+                                        plates = plates,
+                                        onAddToCart = { /* TODO: implement plate cart */ }
+                                    )
+                                }
+                            }
+
+                            if (dishes.isNotEmpty()) {
+                                item {
+                                    DishSection(
+                                        dishes = dishes,
+                                        onAddToCart = { /* TODO: implement dish cart */ }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
+        
+        // Filter Dialog
+        com.startup.recordservice.ui.components.FilterDialog(
+            open = showFilterDialog,
+            onDismiss = { showFilterDialog = false },
+            onApply = { filters ->
+                viewModel.applyFilters(filters)
+                showFilterDialog = false
+            },
+            onReset = {
+                viewModel.resetFilters()
+            },
+            initialFilters = filterOptions,
+            activeFilterCount = activeFilterCount
+        )
     }
 }
 
@@ -245,8 +292,10 @@ fun ExploreTopBar(
     searchText: String,
     onSearchChange: (String) -> Unit,
     cartCount: Int,
+    filterCount: Int = 0,
     onNotificationsClick: () -> Unit,
     onCartClick: () -> Unit,
+    onFilterClick: () -> Unit,
     onProfileClick: () -> Unit
 ) {
     Column(
@@ -270,6 +319,18 @@ fun ExploreTopBar(
                 singleLine = true
             )
 
+            BadgedBox(
+                badge = {
+                    if (filterCount > 0) {
+                        Badge { Text(filterCount.toString()) }
+                    }
+                }
+            ) {
+                IconButton(onClick = onFilterClick) {
+                    Icon(Icons.Default.FilterList, contentDescription = "Filters")
+                }
+            }
+            
             IconButton(onClick = onNotificationsClick) {
                 Icon(Icons.Default.Notifications, contentDescription = "Notifications")
             }

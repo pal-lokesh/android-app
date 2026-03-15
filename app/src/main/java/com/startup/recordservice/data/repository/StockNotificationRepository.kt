@@ -34,5 +34,19 @@ class StockNotificationRepository @Inject constructor(
         Log.e(TAG, "subscribe error: ${e.message}", e)
         Result.failure(e)
     }
+    
+    suspend fun unsubscribe(
+        userId: String,
+        itemId: String,
+        itemType: String,
+        requestedDate: String?
+    ): Result<Unit> = try {
+        val res = apiService.unsubscribeStockNotification(userId, itemId, itemType, requestedDate)
+        if (res.isSuccessful) Result.success(Unit)
+        else Result.failure(Exception(res.errorBody()?.string() ?: "Failed to unsubscribe (HTTP ${res.code()})"))
+    } catch (e: Exception) {
+        Log.e(TAG, "unsubscribe error: ${e.message}", e)
+        Result.failure(e)
+    }
 }
 

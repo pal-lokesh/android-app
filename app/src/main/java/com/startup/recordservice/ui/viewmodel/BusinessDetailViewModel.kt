@@ -10,6 +10,11 @@ import com.startup.recordservice.data.repository.BusinessRepository
 import com.startup.recordservice.data.repository.PlateRepository
 import com.startup.recordservice.data.repository.DishRepository
 import com.startup.recordservice.data.repository.InventoryRepository
+import com.startup.recordservice.data.repository.OrderRepository
+import com.startup.recordservice.data.repository.AvailabilityRepository
+import com.startup.recordservice.data.local.TokenManager
+import com.startup.recordservice.data.model.OrderRequest
+import com.startup.recordservice.data.model.OrderItemRequest
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,12 +33,26 @@ sealed class BusinessDetailUiState {
     data class Error(val message: String) : BusinessDetailUiState()
 }
 
+data class BusinessCartItem(
+    val id: String,
+    val name: String,
+    val price: Double,
+    val type: String, // "INVENTORY", "PLATE", "DISH"
+    val businessId: String,
+    val businessName: String?,
+    val quantity: Int = 1,
+    val bookingDate: String? = null
+)
+
 @HiltViewModel
 class BusinessDetailViewModel @Inject constructor(
     private val businessRepository: BusinessRepository,
     private val plateRepository: PlateRepository,
     private val dishRepository: DishRepository,
-    private val inventoryRepository: InventoryRepository
+    private val inventoryRepository: InventoryRepository,
+    private val orderRepository: OrderRepository,
+    private val availabilityRepository: AvailabilityRepository,
+    private val tokenManager: TokenManager
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow<BusinessDetailUiState>(BusinessDetailUiState.Idle)
@@ -50,6 +69,9 @@ class BusinessDetailViewModel @Inject constructor(
     
     private val _plateDishes = MutableStateFlow<Map<String, List<DishResponse>>>(emptyMap())
     val plateDishes: StateFlow<Map<String, List<DishResponse>>> = _plateDishes.asStateFlow()
+    
+    private val _cartItems = MutableStateFlow<List<BusinessCartItem>>(emptyList())
+    val cartItems: StateFlow<List<BusinessCartItem>> = _cartItems.asStateFlow()
     
     fun loadBusiness(businessId: String) {
         if (businessId.isBlank()) {
@@ -125,5 +147,141 @@ class BusinessDetailViewModel @Inject constructor(
                 )
             }
         }
+    }
+    
+    fun addInventoryToCart(inventory: InventoryResponse, businessId: String, businessName: String?) {
+        val item = BusinessCartItem(
+            id = inventory.inventoryId ?: "",
+            name = inventory.itemName ?: "Unknown Item",
+            price = inventory.price ?: 0.0,
+            type = "INVENTORY",
+            businessId = businessId,
+            businessName = businessName,
+            quantity = 1
+        )
+        val current = _cartItems.value.toMutableList()
+        current.add(item)
+        _cartItems.value = current
+    }
+    
+    fun addPlateToCart(plate: PlateResponse, businessId: String, businessName: String?) {
+        val item = BusinessCartItem(
+            id = plate.plateId ?: "",
+            name = plate.plateName ?: "Unknown Plate",
+            price = plate.price ?: 0.0,
+            type = "PLATE",
+            businessId = businessId,
+            businessName = businessName,
+            quantity = 1
+        )
+        val current = _cartItems.value.toMutableList()
+        current.add(item)
+        _cartItems.value = current
+    }
+    
+    fun addDishToCart(dish: DishResponse, businessId: String, businessName: String?) {
+        val item = BusinessCartItem(
+            id = dish.dishId ?: "",
+            name = dish.dishName ?: "Unknown Dish",
+            price = dish.price ?: 0.0,
+            type = "DISH",
+            businessId = businessId,
+            businessName = businessName,
+            quantity = 1
+        )
+        val current = _cartItems.value.toMutableList()
+        current.add(item)
+        _cartItems.value = current
+    }
+    
+    fun removeCartItem(index: Int) {
+        val current = _cartItems.value.toMutableList()
+        if (index in current.indices) {
+            current.removeAt(index)
+            _cartItems.value = current
+        }
+    }
+    
+    fun clearCart() {
+        _cartItems.value = emptyList()
+    }
+    
+    suspend fun placeOrder(
+        customerName: String,
+        customerEmail: String,
+        customerPhone: String,
+        deliveryAddress: String,
+        deliveryDate: String,
+        specialNotes: String?
+    ): Result<com.startup.recordservice.data.model.OrderResponse> {
+        val userId = tokenManager.getUserPhone()
+        if (userId.isNullOrBlank()) {
+            return Result.failure(Exception("User not logged in"))
+        }
+        
+        val cart = _cartItems.value
+        if (cart.isEmpty()) return Result.failure(Exception("Cart is empty"))
+        
+        val businessId = cart.firstOrNull()?.businessId ?: return Result.failure(Exception("Invalid business ID"))
+        
+        // Check availability for each item
+        for (item in cart) {
+            val dateToCheck = item.bookingDate ?: deliveryDate
+            val itemTypeLower = when (item.type.uppercase()) {
+                "INVENTORY" -> "inventory"
+                "PLATE" -> "plate"
+                "DISH" -> "dish"
+                else -> item.type.lowercase()
+            }
+            val availableQty = availabilityRepository
+                .getAvailableQuantity(item.id, itemTypeLower, dateToCheck)
+                .getOrNull()
+                ?.availableQuantity
+                ?: 0
+            if (availableQty < item.quantity) {
+                return Result.failure(
+                    Exception("${item.name} not available on $dateToCheck (available: $availableQty, requested: ${item.quantity})")
+                )
+            }
+        }
+        
+        val orderItems = cart.map { ci ->
+            val itemTypeLower = when (ci.type.uppercase()) {
+                "INVENTORY" -> "inventory"
+                "PLATE" -> "plate"
+                "DISH" -> "dish"
+                else -> ci.type.lowercase()
+            }
+            
+            OrderItemRequest(
+                itemId = ci.id,
+                itemName = ci.name,
+                itemPrice = ci.price,
+                quantity = ci.quantity,
+                itemType = itemTypeLower,
+                businessId = businessId,
+                businessName = ci.businessName,
+                imageUrl = null,
+                bookingDate = ci.bookingDate,
+                selectedDishes = null
+            )
+        }
+        
+        val req = OrderRequest(
+            userId = userId,
+            items = orderItems,
+            customerName = customerName,
+            customerEmail = customerEmail,
+            customerPhone = customerPhone,
+            deliveryAddress = deliveryAddress,
+            deliveryDate = deliveryDate,
+            specialNotes = specialNotes
+        )
+        
+        val result = orderRepository.createOrder(req)
+        if (result.isSuccess) {
+            clearCart()
+        }
+        return result
     }
 }

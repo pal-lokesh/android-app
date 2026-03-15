@@ -15,16 +15,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.startup.recordservice.ui.viewmodel.BusinessDetailViewModel
+import com.startup.recordservice.ui.viewmodel.BusinessCartItem
 import com.startup.recordservice.data.model.PlateResponse
 import com.startup.recordservice.data.model.DishResponse
 import com.startup.recordservice.data.model.InventoryResponse
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BusinessDetailScreen(
     businessId: String,
     onNavigateBack: () -> Unit,
+    onChatClick: (String, String?) -> Unit = { _, _ -> },
     viewModel: BusinessDetailViewModel = hiltViewModel()
 ) {
     LaunchedEffect(businessId) {
@@ -40,9 +47,26 @@ fun BusinessDetailScreen(
     val plates by viewModel.plates.collectAsStateWithLifecycle()
     val inventory by viewModel.inventory.collectAsStateWithLifecycle()
     val plateDishes by viewModel.plateDishes.collectAsStateWithLifecycle()
+    val cartItems by viewModel.cartItems.collectAsStateWithLifecycle()
     
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Info", "Plates", "Inventory")
+    
+    var showCart by remember { mutableStateOf(false) }
+    var showCheckout by remember { mutableStateOf(false) }
+    var placingOrder by remember { mutableStateOf(false) }
+    var orderError by remember { mutableStateOf<String?>(null) }
+    var orderSuccess by remember { mutableStateOf<String?>(null) }
+    
+    var customerName by remember { mutableStateOf("") }
+    var customerEmail by remember { mutableStateOf("") }
+    var customerPhone by remember { mutableStateOf("") }
+    var deliveryAddress by remember { mutableStateOf("") }
+    var deliveryDateText by remember { mutableStateOf<String?>(null) }
+    var specialNotes by remember { mutableStateOf("") }
+    var showDeliveryDateDialog by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState()
+    val scope = rememberCoroutineScope()
     
     Scaffold(
         topBar = {
@@ -52,8 +76,49 @@ fun BusinessDetailScreen(
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            business?.let { biz ->
+                                onChatClick(businessId, biz.businessName)
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Chat, contentDescription = "Chat")
+                    }
                 }
             )
+        },
+        floatingActionButton = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(end = 16.dp)
+            ) {
+                if (cartItems.isNotEmpty()) {
+                    BadgedBox(
+                        badge = {
+                            Badge {
+                                Text(cartItems.size.toString())
+                            }
+                        }
+                    ) {
+                        FloatingActionButton(
+                            onClick = { showCart = true },
+                            modifier = Modifier.size(56.dp)
+                        ) {
+                            Icon(Icons.Default.ShoppingCart, contentDescription = "Cart")
+                        }
+                    }
+                }
+                business?.let { biz ->
+                    ExtendedFloatingActionButton(
+                        onClick = { onChatClick(businessId, biz.businessName) },
+                        icon = { Icon(Icons.Default.Chat, contentDescription = null) },
+                        text = { Text("Chat") }
+                    )
+                }
+            }
         }
     ) { padding ->
         when (uiState) {
@@ -142,8 +207,24 @@ fun BusinessDetailScreen(
                     // Tab Content
                     when (selectedTabIndex) {
                         0 -> BusinessInfoTab(business = biz)
-                        1 -> PlatesTab(plates = plates, plateDishes = plateDishes)
-                        2 -> InventoryTab(inventory = inventory)
+                        1 -> PlatesTab(
+                            plates = plates, 
+                            plateDishes = plateDishes,
+                            businessId = businessId,
+                            businessName = business?.businessName,
+                            onAddPlateToCart = { plate ->
+                                viewModel.addPlateToCart(plate, businessId, business?.businessName)
+                            },
+                            onAddDishToCart = { dish ->
+                                viewModel.addDishToCart(dish, businessId, business?.businessName)
+                            }
+                        )
+                        2 -> InventoryTab(
+                            inventory = inventory,
+                            onAddToCart = { inv ->
+                                viewModel.addInventoryToCart(inv, businessId, business?.businessName)
+                            }
+                        )
                     }
                 }
             }
@@ -157,6 +238,103 @@ fun BusinessDetailScreen(
                     CircularProgressIndicator()
                 }
             }
+        }
+    }
+    
+    // Cart Dialog
+    if (showCart) {
+        CartDialog(
+            cartItems = cartItems,
+            onDismiss = { showCart = false },
+            onRemoveItem = { index: Int -> viewModel.removeCartItem(index) },
+            onCheckout = {
+                showCart = false
+                showCheckout = true
+            }
+        )
+    }
+    
+    // Checkout Dialog
+    if (showCheckout) {
+        CheckoutDialog(
+            cartItems = cartItems,
+            customerName = customerName,
+            customerEmail = customerEmail,
+            customerPhone = customerPhone,
+            deliveryAddress = deliveryAddress,
+            deliveryDateText = deliveryDateText,
+            specialNotes = specialNotes,
+            placingOrder = placingOrder,
+            orderError = orderError,
+            orderSuccess = orderSuccess,
+            onCustomerNameChange = { value: String -> customerName = value },
+            onCustomerEmailChange = { value: String -> customerEmail = value },
+            onCustomerPhoneChange = { value: String -> customerPhone = value },
+            onDeliveryAddressChange = { value: String -> deliveryAddress = value },
+            onSpecialNotesChange = { value: String -> specialNotes = value },
+            onDeliveryDateClick = { showDeliveryDateDialog = true },
+            onDismiss = { if (!placingOrder) showCheckout = false },
+            onPlaceOrder = {
+                val date = deliveryDateText
+                if (customerName.isBlank() || customerEmail.isBlank() || customerPhone.isBlank() || deliveryAddress.isBlank() || date.isNullOrBlank()) {
+                    orderError = "Please fill all required fields (including delivery date)."
+                    return@CheckoutDialog
+                }
+                placingOrder = true
+                orderError = null
+                orderSuccess = null
+                scope.launch {
+                    val result = viewModel.placeOrder(
+                        customerName = customerName.trim(),
+                        customerEmail = customerEmail.trim(),
+                        customerPhone = customerPhone.trim(),
+                        deliveryAddress = deliveryAddress.trim(),
+                        deliveryDate = date,
+                        specialNotes = specialNotes.trim().ifBlank { null }
+                    )
+                    placingOrder = false
+                    result.onSuccess {
+                        orderSuccess = "Order placed successfully!"
+                        showCheckout = false
+                        customerName = ""
+                        customerEmail = ""
+                        customerPhone = ""
+                        deliveryAddress = ""
+                        deliveryDateText = null
+                        specialNotes = ""
+                    }.onFailure { e ->
+                        orderError = e.message ?: "Failed to place order"
+                    }
+                }
+            }
+        )
+    }
+    
+    // Date Picker Dialog
+    if (showDeliveryDateDialog) {
+        DatePickerDialog(
+            onDismissRequest = { showDeliveryDateDialog = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val millis = datePickerState.selectedDateMillis
+                        if (millis != null) {
+                            val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                            deliveryDateText = dateFormat.format(Date(millis))
+                        }
+                        showDeliveryDateDialog = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeliveryDateDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
         }
     }
 }
@@ -284,7 +462,14 @@ fun BusinessInfoTab(business: com.startup.recordservice.data.model.BusinessRespo
 }
 
 @Composable
-fun PlatesTab(plates: List<PlateResponse>, plateDishes: Map<String, List<DishResponse>>) {
+fun PlatesTab(
+    plates: List<PlateResponse>, 
+    plateDishes: Map<String, List<DishResponse>>,
+    businessId: String,
+    businessName: String?,
+    onAddPlateToCart: (PlateResponse) -> Unit = {},
+    onAddDishToCart: (DishResponse) -> Unit = {}
+) {
     if (plates.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -314,14 +499,24 @@ fun PlatesTab(plates: List<PlateResponse>, plateDishes: Map<String, List<DishRes
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(plates) { plate ->
-                PlateCard(plate = plate, dishes = plateDishes[plate.plateId] ?: emptyList())
+                PlateCard(
+                    plate = plate, 
+                    dishes = plateDishes[plate.plateId] ?: emptyList(),
+                    onAddPlateToCart = { onAddPlateToCart(plate) },
+                    onAddDishToCart = onAddDishToCart
+                )
             }
         }
     }
 }
 
 @Composable
-fun PlateCard(plate: PlateResponse, dishes: List<DishResponse>) {
+fun PlateCard(
+    plate: PlateResponse, 
+    dishes: List<DishResponse>,
+    onAddPlateToCart: () -> Unit = {},
+    onAddDishToCart: (DishResponse) -> Unit = {}
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -376,17 +571,23 @@ fun PlateCard(plate: PlateResponse, dishes: List<DishResponse>) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(start = 16.dp, top = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = dish.dishName?.takeIf { it.isNotBlank() } ?: "Unknown Dish",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "₹${String.format("%.2f", dish.price)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = dish.dishName?.takeIf { it.isNotBlank() } ?: "Unknown Dish",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "₹${String.format("%.2f", dish.price)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        IconButton(onClick = { onAddDishToCart(dish) }) {
+                            Icon(Icons.Default.AddShoppingCart, contentDescription = "Add Dish to Cart")
+                        }
                     }
                 }
             }
@@ -403,12 +604,26 @@ fun PlateCard(plate: PlateResponse, dishes: List<DishResponse>) {
                     )
                 }
             }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Button(onClick = onAddPlateToCart) {
+                    Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Add to Cart")
+                }
+            }
         }
     }
 }
 
 @Composable
-fun InventoryTab(inventory: List<InventoryResponse>) {
+fun InventoryTab(
+    inventory: List<InventoryResponse>,
+    onAddToCart: (InventoryResponse) -> Unit = {}
+) {
     if (inventory.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -438,14 +653,17 @@ fun InventoryTab(inventory: List<InventoryResponse>) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(inventory) { item ->
-                InventoryCard(item = item)
+                InventoryCard(item = item, onAddToCart = { onAddToCart(item) })
             }
         }
     }
 }
 
 @Composable
-fun InventoryCard(item: InventoryResponse) {
+fun InventoryCard(
+    item: InventoryResponse,
+    onAddToCart: () -> Unit = {}
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -514,6 +732,210 @@ fun InventoryCard(item: InventoryResponse) {
                     }
                 }
             }
+            
+            if (item.isActive) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Button(onClick = onAddToCart) {
+                        Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add to Cart")
+                    }
+                }
+            }
         }
     }
+}
+
+@Composable
+fun CartDialog(
+    cartItems: List<BusinessCartItem>,
+    onDismiss: () -> Unit,
+    onRemoveItem: (Int) -> Unit,
+    onCheckout: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Your Cart") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (cartItems.isEmpty()) {
+                    Text("Your cart is empty.")
+                } else {
+                    cartItems.forEachIndexed { index, item ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = item.name,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "₹${String.format("%.2f", item.price)} x ${item.quantity}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                IconButton(onClick = { onRemoveItem(index) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Remove")
+                                }
+                            }
+                        }
+                    }
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    val total = cartItems.sumOf { it.price * it.quantity }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Total:",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "₹${String.format("%.2f", total)}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onCheckout,
+                enabled = cartItems.isNotEmpty()
+            ) {
+                Text("Checkout")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CheckoutDialog(
+    cartItems: List<BusinessCartItem>,
+    customerName: String,
+    customerEmail: String,
+    customerPhone: String,
+    deliveryAddress: String,
+    deliveryDateText: String?,
+    specialNotes: String,
+    placingOrder: Boolean,
+    orderError: String?,
+    orderSuccess: String?,
+    onCustomerNameChange: (String) -> Unit,
+    onCustomerEmailChange: (String) -> Unit,
+    onCustomerPhoneChange: (String) -> Unit,
+    onDeliveryAddressChange: (String) -> Unit,
+    onSpecialNotesChange: (String) -> Unit,
+    onDeliveryDateClick: () -> Unit,
+    onDismiss: () -> Unit,
+    onPlaceOrder: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { if (!placingOrder) onDismiss() },
+        title = { Text("Checkout") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (orderError != null) {
+                    Text(orderError, color = MaterialTheme.colorScheme.error)
+                }
+                if (orderSuccess != null) {
+                    Text(orderSuccess, color = MaterialTheme.colorScheme.primary)
+                }
+
+                OutlinedTextField(
+                    value = customerName,
+                    onValueChange = onCustomerNameChange,
+                    label = { Text("Customer Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = customerEmail,
+                    onValueChange = onCustomerEmailChange,
+                    label = { Text("Customer Email") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = customerPhone,
+                    onValueChange = onCustomerPhoneChange,
+                    label = { Text("Customer Phone") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = deliveryAddress,
+                    onValueChange = onDeliveryAddressChange,
+                    label = { Text("Delivery Address") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    text = "Delivery Date",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                OutlinedButton(
+                    onClick = onDeliveryDateClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(deliveryDateText ?: "Select date")
+                }
+
+                OutlinedTextField(
+                    value = specialNotes,
+                    onValueChange = onSpecialNotesChange,
+                    label = { Text("Special Notes (optional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !placingOrder,
+                onClick = onPlaceOrder
+            ) {
+                Text(if (placingOrder) "Placing…" else "Place Order")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                enabled = !placingOrder,
+                onClick = onDismiss
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
 }

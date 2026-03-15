@@ -5,6 +5,7 @@ import com.startup.recordservice.data.api.ApiService
 import com.startup.recordservice.data.model.OrderRequest
 import com.startup.recordservice.data.model.OrderResponse
 import com.startup.recordservice.data.model.UpdateStatusRequest
+import com.startup.recordservice.data.model.UpdateAmountRequest
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -117,6 +118,29 @@ class OrderRepository @Inject constructor(
                 Result.failure(Exception(errorBody))
             }
         } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateOrderAmount(orderId: String, newAmount: Double): Result<OrderResponse> {
+        return try {
+            Log.d(TAG, "Updating order amount for orderId=$orderId, newAmount=$newAmount")
+            val request = UpdateAmountRequest(newAmount = newAmount)
+            val response = apiService.updateOrderAmount(orderId, request)
+            if (response.isSuccessful && response.body() != null) {
+                Log.d(TAG, "Successfully updated order amount")
+                Result.success(response.body()!!)
+            } else {
+                val errorBody = try {
+                    response.errorBody()?.string() ?: "Failed to update order amount (HTTP ${response.code()})"
+                } catch (e: Exception) {
+                    "Failed to update order amount (HTTP ${response.code()}): ${e.message}"
+                }
+                Log.e(TAG, "Failed to update order amount: $errorBody")
+                Result.failure(Exception(errorBody))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating order amount: ${e.message}", e)
             Result.failure(e)
         }
     }

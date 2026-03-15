@@ -18,6 +18,10 @@ import com.startup.recordservice.data.repository.InventoryRepository
 import com.startup.recordservice.data.repository.InventoryImageRepository
 import com.startup.recordservice.data.repository.OrderRepository
 import com.startup.recordservice.data.repository.ThemeRepository
+import com.startup.recordservice.data.repository.PlateRepository
+import com.startup.recordservice.data.repository.DishRepository
+import com.startup.recordservice.data.model.PlateResponse
+import com.startup.recordservice.data.model.DishResponse
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +46,8 @@ class VendorViewModel @Inject constructor(
     private val orderRepository: OrderRepository,
     private val inventoryRepository: InventoryRepository,
     private val themeRepository: ThemeRepository,
+    private val plateRepository: PlateRepository,
+    private val dishRepository: DishRepository,
     private val imageRepository: ImageRepository,
     private val inventoryImageRepository: InventoryImageRepository,
     private val tokenManager: TokenManager
@@ -657,6 +663,92 @@ class VendorViewModel @Inject constructor(
                     }
             }
             loadData()
+        }
+    }
+
+    fun createPlate(
+        request: PlateResponse,
+        imageUris: List<Uri>,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = VendorUiState.Loading
+                plateRepository.createPlate(request)
+                    .onSuccess { createdPlate ->
+                        val plateId = createdPlate.plateId
+                        if (plateId != null && imageUris.isNotEmpty()) {
+                            val context = getApplication<Application>().applicationContext
+                            imageUris.forEachIndexed { index, uri ->
+                                val imageName = "plate_${plateId}_$index"
+                                imageRepository.uploadFile(context, uri, "plates", plateId)
+                                    .onSuccess { imageUrl ->
+                                        android.util.Log.d("VendorViewModel", "Successfully uploaded plate image: $imageUrl")
+                                        // Note: Backend may handle plate image records automatically via upload endpoint
+                                        // If separate image record creation is needed, it would go here
+                                    }
+                                    .onFailure { e ->
+                                        android.util.Log.e("VendorViewModel", "Failed to upload image for plate $plateId: ${e.message}")
+                                    }
+                            }
+                        }
+                        loadData()
+                        _uiState.value = VendorUiState.Success()
+                        onSuccess()
+                    }
+                    .onFailure { e ->
+                        _uiState.value = VendorUiState.Error(
+                            "Failed to create plate: ${e.message ?: "Unknown error"}"
+                        )
+                    }
+            } catch (e: Exception) {
+                _uiState.value = VendorUiState.Error(
+                    "Failed to create plate: ${e.message ?: "Unknown error"}"
+                )
+            }
+        }
+    }
+
+    fun createDish(
+        request: DishResponse,
+        imageUris: List<Uri>,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                _uiState.value = VendorUiState.Loading
+                dishRepository.createDish(request)
+                    .onSuccess { createdDish ->
+                        val dishId = createdDish.dishId
+                        if (dishId != null && imageUris.isNotEmpty()) {
+                            val context = getApplication<Application>().applicationContext
+                            imageUris.forEachIndexed { index, uri ->
+                                val imageName = "dish_${dishId}_$index"
+                                imageRepository.uploadFile(context, uri, "dishes", dishId)
+                                    .onSuccess { imageUrl ->
+                                        android.util.Log.d("VendorViewModel", "Successfully uploaded dish image: $imageUrl")
+                                        // Note: Backend may handle dish image records automatically via upload endpoint
+                                        // If separate image record creation is needed, it would go here
+                                    }
+                                    .onFailure { e ->
+                                        android.util.Log.e("VendorViewModel", "Failed to upload image for dish $dishId: ${e.message}")
+                                    }
+                            }
+                        }
+                        loadData()
+                        _uiState.value = VendorUiState.Success()
+                        onSuccess()
+                    }
+                    .onFailure { e ->
+                        _uiState.value = VendorUiState.Error(
+                            "Failed to create dish: ${e.message ?: "Unknown error"}"
+                        )
+                    }
+            } catch (e: Exception) {
+                _uiState.value = VendorUiState.Error(
+                    "Failed to create dish: ${e.message ?: "Unknown error"}"
+                )
+            }
         }
     }
 }

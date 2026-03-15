@@ -23,6 +23,11 @@ import com.startup.recordservice.ui.viewmodel.AvailabilityViewModel
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.time.DayOfWeek
+import java.time.temporal.WeekFields
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +54,10 @@ fun AvailabilityManagementScreen(
     var dialogPriceOverride by remember { mutableStateOf("") }
 
     var pendingDeleteDate by remember { mutableStateOf<LocalDate?>(null) }
+    
+    // Calendar view state
+    var currentMonth by remember { mutableStateOf(YearMonth.now()) }
+    var showCalendarView by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         viewModel.loadInitial()
@@ -139,11 +148,19 @@ fun AvailabilityManagementScreen(
                         )
                     }
                 }
-                Button(
-                    onClick = { openForEdit(null) },
-                    enabled = selectedItem != null
-                ) {
-                    Text("Add")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(onClick = { showCalendarView = !showCalendarView }) {
+                        Icon(
+                            if (showCalendarView) Icons.Default.List else Icons.Default.CalendarMonth,
+                            contentDescription = if (showCalendarView) "List View" else "Calendar View"
+                        )
+                    }
+                    Button(
+                        onClick = { openForEdit(null) },
+                        enabled = selectedItem != null
+                    ) {
+                        Text("Add")
+                    }
                 }
             }
 
@@ -156,25 +173,40 @@ fun AvailabilityManagementScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            } else if (availabilities.isEmpty() && uiState !is AvailabilityUiState.Loading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "No availability set yet. Tap Add to create one.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            } else if (showCalendarView) {
+                // Calendar View
+                CalendarView(
+                    currentMonth = currentMonth,
+                    availabilities = availabilities,
+                    onMonthChange = { currentMonth = it },
+                    onDateClick = { date ->
+                        val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                        val existing = availabilities.find { it.availabilityDate == dateStr }
+                        openForEdit(existing)
+                    }
+                )
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
-                ) {
-                    items(availabilities, key = { it.availabilityId ?: it.hashCode().toLong() }) { a ->
-                        AvailabilityRow(
-                            availability = a,
-                            onEdit = { openForEdit(a) },
-                            onDelete = { pendingDeleteDate = a.availabilityDate?.let { LocalDate.parse(it) } }
+                // List View
+                if (availabilities.isEmpty() && uiState !is AvailabilityUiState.Loading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "No availability set yet. Tap Add to create one.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        items(availabilities, key = { it.availabilityId ?: it.hashCode().toLong() }) { a ->
+                            AvailabilityRow(
+                                availability = a,
+                                onEdit = { openForEdit(a) },
+                                onDelete = { pendingDeleteDate = a.availabilityDate?.let { LocalDate.parse(it) } }
+                            )
+                        }
                     }
                 }
             }
@@ -466,3 +498,172 @@ private fun AvailabilityEditDialog(
     }
 }
 
+@Composable
+fun CalendarView(
+    currentMonth: YearMonth,
+    availabilities: List<AvailabilityResponse>,
+    onMonthChange: (YearMonth) -> Unit,
+    onDateClick: (LocalDate) -> Unit
+) {
+    val firstDayOfMonth = currentMonth.atDay(1)
+    val firstDayOfWeek = firstDayOfMonth.dayOfWeek
+    val daysInMonth = currentMonth.lengthOfMonth()
+    
+    val weekFields = WeekFields.of(Locale.getDefault())
+    val firstWeekday = firstDayOfWeek.get(weekFields.dayOfWeek())
+    val offset = (firstWeekday - 1) % 7
+    
+    val monthFormatter = DateTimeFormatter.ofPattern("MMMM yyyy")
+    
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Month navigation
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { onMonthChange(currentMonth.minusMonths(1)) }) {
+                Icon(Icons.Default.ChevronLeft, contentDescription = "Previous Month")
+            }
+            Text(
+                text = currentMonth.format(monthFormatter),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            IconButton(onClick = { onMonthChange(currentMonth.plusMonths(1)) }) {
+                Icon(Icons.Default.ChevronRight, contentDescription = "Next Month")
+            }
+        }
+        
+        // Day headers
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEach { day ->
+                Text(
+                    text = day,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+        
+        // Calendar grid
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Empty cells for offset
+            if (offset > 0) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    repeat(offset) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+            
+            // Days of month
+            var currentDay = 1
+            while (currentDay <= daysInMonth) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    repeat(7) { col ->
+                        if (currentDay <= daysInMonth && (col >= offset || currentDay > 1)) {
+                            val date = currentMonth.atDay(currentDay)
+                            val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
+                            val availability = availabilities.find { it.availabilityDate == dateStr }
+                            val isPast = date.isBefore(LocalDate.now())
+                            
+                            CalendarDayCell(
+                                day = currentDay,
+                                date = date,
+                                availability = availability,
+                                isPast = isPast,
+                                onClick = { if (!isPast) onDateClick(date) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            currentDay++
+                        } else if (col < offset && currentDay == 1) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CalendarDayCell(
+    day: Int,
+    date: LocalDate,
+    availability: AvailabilityResponse?,
+    isPast: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val backgroundColor = when {
+        isPast -> MaterialTheme.colorScheme.surfaceVariant
+        availability?.isAvailable == true && (availability.availableQuantity ?: 0) > 0 -> 
+            MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.errorContainer
+    }
+    
+    val contentColor = when {
+        isPast -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    
+    Card(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clickable(enabled = !isPast, onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = backgroundColor
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = day.toString(),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                color = contentColor
+            )
+            if (availability != null) {
+                val avail = availability!!
+                Text(
+                    text = "Qty: ${avail.availableQuantity ?: 0}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = contentColor
+                )
+                avail.priceOverride?.let { price ->
+                    Text(
+                        text = "₹${String.format("%.0f", price)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = contentColor
+                    )
+                }
+            } else if (!isPast) {
+                Text(
+                    text = "Not set",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = contentColor.copy(alpha = 0.7f)
+                )
+            }
+        }
+    }
+}

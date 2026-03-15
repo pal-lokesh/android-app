@@ -41,12 +41,14 @@ fun VendorDashboardScreen(
     onCreateBusinessClick: () -> Unit = {},
     onAddInventoryClick: () -> Unit = {},
     onAddThemeClick: () -> Unit = {},
+    onNotificationsClick: (String) -> Unit = {},
     onDashboardClick: () -> Unit = {},
     onOrdersClick: () -> Unit = {},
     onInventoryTabClick: () -> Unit = {},
     onThemeTabClick: () -> Unit = {},
     onAvailabilityClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
+    onBusinessClick: (String) -> Unit = {},
     currentTab: VendorTab = VendorTab.DASHBOARD
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -84,8 +86,11 @@ fun VendorDashboardScreen(
             SmallTopAppBar(
                 title = { Text("Vendor Dashboard") },
                 actions = {
-                    IconButton(onClick = { /* TODO: Navigate to notifications */ }) {
-                        Icon(Icons.Default.Notifications, contentDescription = "Notifications")
+                    // Show notifications for first business (can be enhanced to show all or selected)
+                    businesses.firstOrNull()?.businessId?.let { businessId ->
+                        IconButton(onClick = { onNotificationsClick(businessId) }) {
+                            Icon(Icons.Default.Notifications, contentDescription = "Notifications")
+                        }
                     }
                     IconButton(onClick = onAvailabilityClick) {
                         Icon(Icons.Default.CalendarMonth, contentDescription = "Availability")
@@ -582,7 +587,13 @@ fun VendorDashboardScreen(
                     } else if (currentTab == VendorTab.DASHBOARD && businesses.isNotEmpty()) {
                         items(businesses) { business ->
                             Card(
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        business.businessId?.let { businessId ->
+                                            onBusinessClick(businessId)
+                                        }
+                                    }
                             ) {
                                 Column(
                                     modifier = Modifier.padding(16.dp)

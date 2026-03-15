@@ -95,6 +95,11 @@ class ExploreViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow<String>("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
     
+    private val _filterOptions = MutableStateFlow<com.startup.recordservice.ui.components.FilterOptions>(
+        com.startup.recordservice.ui.components.FilterOptions()
+    )
+    val filterOptions: StateFlow<com.startup.recordservice.ui.components.FilterOptions> = _filterOptions.asStateFlow()
+    
     fun loadData() {
         viewModelScope.launch {
             try {
@@ -188,11 +193,37 @@ class ExploreViewModel @Inject constructor(
         _searchQuery.value = query
     }
     
+    fun applyFilters(filters: com.startup.recordservice.ui.components.FilterOptions) {
+        _filterOptions.value = filters
+        // Update category if changed
+        if (filters.category != "all") {
+            _selectedCategory.value = filters.category
+        }
+    }
+    
+    fun resetFilters() {
+        _filterOptions.value = com.startup.recordservice.ui.components.FilterOptions()
+        _selectedCategory.value = "all"
+    }
+    
+    fun getActiveFilterCount(): Int {
+        val filters = _filterOptions.value
+        var count = 0
+        if (filters.eventType != "all") count++
+        if (filters.category != "all") count++
+        if (filters.location != "all") count++
+        if (filters.budget != "all") count++
+        if (filters.sortBy != "default") count++
+        if (filters.minRating > 0) count++
+        return count
+    }
+    
     fun getFilteredThemes(): List<ThemeResponse> {
-        val category = _selectedCategory.value
+        val filters = _filterOptions.value
+        val category = if (filters.category != "all") filters.category else _selectedCategory.value
         val query = _searchQuery.value.lowercase()
         
-        return _themes.value.filter { theme ->
+        var filtered = _themes.value.filter { theme ->
             val matchesCategory = category == "all" || theme.themeCategory?.lowercase() == category.lowercase()
             val matchesSearch = query.isEmpty() || 
                 theme.themeName?.lowercase()?.contains(query) == true ||
@@ -200,13 +231,35 @@ class ExploreViewModel @Inject constructor(
                 theme.themeCategory?.lowercase()?.contains(query) == true
             matchesCategory && matchesSearch && theme.isActive
         }
+        
+        // Apply budget filter
+        if (filters.budget == "custom") {
+            filtered = filtered.filter { theme ->
+                val price = themePriceFromThemeId(theme.themeId ?: "")
+                price >= filters.minBudget && price <= filters.maxBudget
+            }
+        }
+        
+        // Apply sort
+        filtered = when (filters.sortBy) {
+            "price-low" -> filtered.sortedBy { themePriceFromThemeId(it.themeId ?: "") }
+            "price-high" -> filtered.sortedByDescending { themePriceFromThemeId(it.themeId ?: "") }
+            "rating-high", "rating-low" -> {
+                // Rating sorting would require rating data - for now keep as is
+                filtered
+            }
+            else -> filtered
+        }
+        
+        return filtered
     }
     
     fun getFilteredInventory(): List<InventoryResponse> {
-        val category = _selectedCategory.value
+        val filters = _filterOptions.value
+        val category = if (filters.category != "all") filters.category else _selectedCategory.value
         val query = _searchQuery.value.lowercase()
         
-        return _inventory.value.filter { item ->
+        var filtered = _inventory.value.filter { item ->
             val matchesCategory = category == "all" || item.category?.lowercase() == category.lowercase()
             val matchesSearch = query.isEmpty() || 
                 item.itemName?.lowercase()?.contains(query) == true ||
@@ -214,18 +267,62 @@ class ExploreViewModel @Inject constructor(
                 item.category?.lowercase()?.contains(query) == true
             matchesCategory && matchesSearch && item.isActive
         }
+        
+        // Apply budget filter
+        if (filters.budget == "custom") {
+            filtered = filtered.filter { it.price >= filters.minBudget && it.price <= filters.maxBudget }
+        }
+        
+        // Apply sort
+        filtered = when (filters.sortBy) {
+            "price-low" -> filtered.sortedBy { it.price }
+            "price-high" -> filtered.sortedByDescending { it.price }
+            "rating-high", "rating-low" -> filtered // Rating sorting requires rating data
+            else -> filtered
+        }
+        
+        return filtered
     }
     
     fun getFilteredBusinesses(): List<BusinessResponse> {
+        val filters = _filterOptions.value
         val query = _searchQuery.value.lowercase()
         
-        return _businesses.value.filter { business ->
+        var filtered = _businesses.value.filter { business ->
+            val matchesCategory = filters.category == "all" || 
+                business.category?.lowercase() == filters.category.lowercase()
             val matchesSearch = query.isEmpty() || 
                 business.businessName?.lowercase()?.contains(query) == true ||
                 business.category?.lowercase()?.contains(query) == true ||
                 business.description?.lowercase()?.contains(query) == true
-            matchesSearch && business.isActive
+            matchesCategory && matchesSearch && business.isActive
         }
+        
+        // Apply location filter (would need user location and business coordinates)
+        // For now, location filtering is not implemented as it requires GPS
+        
+        // Apply sort
+        filtered = when (filters.sortBy) {
+            "price-low", "price-high" -> {
+                // Sort by average price of themes/inventory
+                filtered.sortedBy { business ->
+                    val themes = _themes.value.filter { it.businessId == business.businessId }
+                    val inventory = _inventory.value.filter { it.businessId == business.businessId }
+                    val themePrices = themes.map { themePriceFromThemeId(it.themeId ?: "") }
+                    val invPrices = inventory.map { it.price }
+                    val allPrices = themePrices + invPrices
+                    if (allPrices.isEmpty()) Double.MAX_VALUE else allPrices.average()
+                }
+            }
+            "rating-high", "rating-low" -> filtered // Rating sorting requires rating data
+            else -> filtered
+        }
+        
+        if (filters.sortBy == "price-high") {
+            filtered = filtered.reversed()
+        }
+        
+        return filtered
     }
     
     fun addInventoryToCart(item: InventoryResponse) {

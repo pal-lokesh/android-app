@@ -321,6 +321,14 @@ interface ApiService {
         @Query("requestedDate") requestedDate: String? = null
     ): Response<StockSubscriptionCheckResponse>
     
+    @DELETE("stock-notifications/unsubscribe")
+    suspend fun unsubscribeStockNotification(
+        @Query("userId") userId: String,
+        @Query("itemId") itemId: String,
+        @Query("itemType") itemType: String,
+        @Query("requestedDate") requestedDate: String? = null
+    ): Response<com.startup.recordservice.data.model.MessageResponse>
+    
     // Products
     @GET("products")
     suspend fun getProducts(): Response<List<com.startup.recordservice.data.model.Product>>
@@ -384,4 +392,26 @@ interface ApiService {
         @Part("category") category: okhttp3.RequestBody,
         @Part("itemId") itemId: okhttp3.RequestBody
     ): Response<FileUploadResponse>
+    
+    // Chat/Messaging
+    @GET("chats/conversations/client/{clientPhone}")
+    suspend fun getClientConversations(@Path("clientPhone") clientPhone: String): Response<List<ChatConversation>>
+    
+    @GET("chats/conversations/vendor/{businessId}")
+    suspend fun getVendorConversations(@Path("businessId") businessId: String): Response<List<ChatConversation>>
+    
+    @GET("chats/conversations/{conversationId}/messages")
+    suspend fun getConversationMessages(@Path("conversationId") conversationId: String): Response<List<ChatMessage>>
+    
+    @POST("chats/conversations")
+    suspend fun createConversation(@Body request: CreateConversationRequest): Response<ChatConversation>
+    
+    @POST("chats/conversations/{conversationId}/messages")
+    suspend fun sendMessage(
+        @Path("conversationId") conversationId: String,
+        @Body request: SendMessageRequest
+    ): Response<ChatMessage>
+    
+    @PUT("chats/conversations/{conversationId}/read")
+    suspend fun markConversationAsRead(@Path("conversationId") conversationId: String): Response<MessageResponse>
 }

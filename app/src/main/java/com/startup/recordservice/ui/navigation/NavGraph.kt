@@ -20,10 +20,21 @@ import com.startup.recordservice.ui.screens.client.OrderDetailsScreen
 import com.startup.recordservice.ui.screens.vendor.AvailabilityManagementScreen
 import com.startup.recordservice.ui.screens.vendor.VendorDashboardScreen
 import com.startup.recordservice.ui.screens.vendor.VendorProfileScreen
+import com.startup.recordservice.ui.screens.vendor.VendorBusinessDetailScreen
 import com.startup.recordservice.ui.screens.vendor.VendorTab
 import com.startup.recordservice.ui.screens.vendor.CreateBusinessScreen
 import com.startup.recordservice.ui.screens.vendor.CreateInventoryScreen
 import com.startup.recordservice.ui.screens.vendor.CreateThemeScreen
+import com.startup.recordservice.ui.screens.vendor.CreatePlateScreen
+import com.startup.recordservice.ui.screens.vendor.CreateDishScreen
+import com.startup.recordservice.ui.screens.vendor.ImageManagementScreen
+import com.startup.recordservice.ui.screens.client.ClientRatingsScreen
+import com.startup.recordservice.ui.screens.client.ClientNotificationsScreen
+import com.startup.recordservice.ui.screens.client.ClientChatScreen
+import com.startup.recordservice.ui.screens.client.ClientConversationsScreen
+import com.startup.recordservice.ui.screens.vendor.VendorChatScreen
+import com.startup.recordservice.ui.screens.vendor.VendorConversationsScreen
+import com.startup.recordservice.ui.screens.vendor.VendorNotificationsScreen
 import com.startup.recordservice.ui.viewmodel.AuthViewModel
 
 sealed class Screen(val route: String) {
@@ -36,17 +47,42 @@ sealed class Screen(val route: String) {
     object VendorInventory : Screen("vendor_inventory")
     object VendorAvailability : Screen("vendor_availability")
     object VendorProfile : Screen("vendor_profile")
+    object ImageManagement : Screen("image_management")
     object ClientExplore : Screen("client_explore")
     object ClientProfile : Screen("client_profile")
     object ClientOrders : Screen("client_orders")
+    object ClientRatings : Screen("client_ratings")
+    object ClientNotifications : Screen("client_notifications")
+    object ClientChat : Screen("client_chat/{businessId}") {
+        fun createRoute(businessId: String) = "client_chat/$businessId"
+    }
+    object ClientConversations : Screen("client_conversations")
+    object VendorConversations : Screen("vendor_conversations/{businessId}") {
+        fun createRoute(businessId: String) = "vendor_conversations/$businessId"
+    }
+    object VendorChat : Screen("vendor_chat/{conversationId}") {
+        fun createRoute(conversationId: String) = "vendor_chat/$conversationId"
+    }
+    object VendorNotifications : Screen("vendor_notifications/{businessId}") {
+        fun createRoute(businessId: String) = "vendor_notifications/$businessId"
+    }
     object ClientOrderDetails : Screen("client_order_details/{orderId}") {
         fun createRoute(orderId: String) = "client_order_details/$orderId"
     }
     object CreateBusiness : Screen("create_business")
     object CreateInventory : Screen("create_inventory")
     object CreateTheme : Screen("create_theme")
+    object CreatePlate : Screen("create_plate/{businessId}") {
+        fun createRoute(businessId: String) = "create_plate/$businessId"
+    }
+    object CreateDish : Screen("create_dish/{plateId}") {
+        fun createRoute(plateId: String) = "create_dish/$plateId"
+    }
     object BusinessDetail : Screen("business_detail/{businessId}") {
         fun createRoute(businessId: String) = "business_detail/$businessId"
+    }
+    object VendorBusinessDetail : Screen("vendor_business_detail/{businessId}") {
+        fun createRoute(businessId: String) = "vendor_business_detail/$businessId"
     }
 }
 
@@ -167,6 +203,80 @@ fun NavGraph(
             )
         }
 
+        composable(Screen.ClientRatings.route) {
+            ClientRatingsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.ClientNotifications.route) {
+            ClientNotificationsScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNotificationClick = { notification ->
+                    // Navigate to order details if orderId exists
+                    notification.orderId?.let { orderId ->
+                        navController.navigate(Screen.ClientOrderDetails.createRoute(orderId.toString()))
+                    }
+                }
+            )
+        }
+
+        composable(Screen.ClientConversations.route) {
+            ClientConversationsScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onConversationClick = { businessId, businessName ->
+                    navController.navigate(Screen.ClientChat.createRoute(businessId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.ClientChat.route,
+            arguments = listOf(navArgument("businessId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val businessId = backStackEntry.arguments?.getString("businessId") ?: ""
+            ClientChatScreen(
+                businessId = businessId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.VendorConversations.route,
+            arguments = listOf(navArgument("businessId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val businessId = backStackEntry.arguments?.getString("businessId") ?: ""
+            VendorConversationsScreen(
+                businessId = businessId,
+                onNavigateBack = { navController.popBackStack() },
+                onConversationClick = { conversationId, clientName ->
+                    navController.navigate(Screen.VendorChat.createRoute(conversationId))
+                }
+            )
+        }
+
+        composable(
+            route = Screen.VendorChat.route,
+            arguments = listOf(navArgument("conversationId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val conversationId = backStackEntry.arguments?.getString("conversationId") ?: ""
+            VendorChatScreen(
+                conversationId = conversationId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.VendorNotifications.route,
+            arguments = listOf(navArgument("businessId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val businessId = backStackEntry.arguments?.getString("businessId") ?: ""
+            VendorNotificationsScreen(
+                businessId = businessId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
         composable(
             route = Screen.ClientOrderDetails.route,
             arguments = listOf(navArgument("orderId") { type = NavType.StringType })
@@ -189,6 +299,9 @@ fun NavGraph(
                 businessId = businessId,
                 onNavigateBack = {
                     navController.popBackStack()
+                },
+                onChatClick = { bid, businessName ->
+                    navController.navigate(Screen.ClientChat.createRoute(bid))
                 }
             )
         }
@@ -210,6 +323,9 @@ fun NavGraph(
                 onAddThemeClick = {
                     navController.navigate(Screen.CreateTheme.route)
                 },
+                onNotificationsClick = { businessId ->
+                    navController.navigate(Screen.VendorNotifications.createRoute(businessId))
+                },
                 onDashboardClick = { /* already on dashboard */ },
                 onAvailabilityClick = {
                     navController.navigateVendor(Screen.VendorAvailability.route)
@@ -225,6 +341,15 @@ fun NavGraph(
                 },
                 onProfileClick = {
                     navController.navigate(Screen.VendorProfile.route)
+                },
+                onBusinessClick = { businessId ->
+                    try {
+                        if (businessId.isNotBlank()) {
+                            navController.navigate(Screen.VendorBusinessDetail.createRoute(businessId))
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("NavGraph", "Navigation error: ${e.message}", e)
+                    }
                 },
                 currentTab = VendorTab.DASHBOARD
             )
@@ -264,6 +389,15 @@ fun NavGraph(
                 onProfileClick = {
                     navController.navigate(Screen.VendorProfile.route)
                 },
+                onBusinessClick = { businessId ->
+                    try {
+                        if (businessId.isNotBlank()) {
+                            navController.navigate(Screen.VendorBusinessDetail.createRoute(businessId))
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("NavGraph", "Navigation error: ${e.message}", e)
+                    }
+                },
                 currentTab = VendorTab.ORDERS
             )
         }
@@ -300,6 +434,15 @@ fun NavGraph(
                 },
                 onProfileClick = {
                     navController.navigate(Screen.VendorProfile.route)
+                },
+                onBusinessClick = { businessId ->
+                    try {
+                        if (businessId.isNotBlank()) {
+                            navController.navigate(Screen.VendorBusinessDetail.createRoute(businessId))
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("NavGraph", "Navigation error: ${e.message}", e)
+                    }
                 },
                 currentTab = VendorTab.INVENTORY
             )
@@ -338,6 +481,15 @@ fun NavGraph(
                 onProfileClick = {
                     navController.navigate(Screen.VendorProfile.route)
                 },
+                onBusinessClick = { businessId ->
+                    try {
+                        if (businessId.isNotBlank()) {
+                            navController.navigate(Screen.VendorBusinessDetail.createRoute(businessId))
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("NavGraph", "Navigation error: ${e.message}", e)
+                    }
+                },
                 currentTab = VendorTab.THEME
             )
         }
@@ -350,6 +502,12 @@ fun NavGraph(
                 onThemeTabClick = { navController.navigateVendor(Screen.VendorThemes.route) },
                 onInventoryTabClick = { navController.navigateVendor(Screen.VendorInventory.route) },
                 onAvailabilityClick = { /* already on availability */ }
+            )
+        }
+
+        composable(Screen.ImageManagement.route) {
+            ImageManagementScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 
@@ -380,6 +538,60 @@ fun NavGraph(
         composable(Screen.CreateTheme.route) {
             CreateThemeScreen(
                 onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.CreatePlate.route,
+            arguments = listOf(
+                navArgument("businessId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val businessId = backStackEntry.arguments?.getString("businessId") ?: ""
+            CreatePlateScreen(
+                businessId = businessId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.CreateDish.route,
+            arguments = listOf(
+                navArgument("plateId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val plateId = backStackEntry.arguments?.getString("plateId") ?: ""
+            CreateDishScreen(
+                plateId = plateId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.VendorBusinessDetail.route,
+            arguments = listOf(
+                navArgument("businessId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val businessId = backStackEntry.arguments?.getString("businessId") ?: ""
+            VendorBusinessDetailScreen(
+                businessId = businessId,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToCreateTheme = { bid ->
+                    navController.navigate(Screen.CreateTheme.route)
+                },
+                onNavigateToCreateInventory = { bid ->
+                    navController.navigate(Screen.CreateInventory.route)
+                },
+                onNavigateToCreatePlate = { bid ->
+                    navController.navigate(Screen.CreatePlate.createRoute(bid))
+                },
+                onNavigateToCreateDish = { plateId ->
+                    navController.navigate(Screen.CreateDish.createRoute(plateId))
+                },
+                onNavigateToConversations = { bid ->
+                    navController.navigate(Screen.VendorConversations.createRoute(bid))
+                }
             )
         }
 
