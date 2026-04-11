@@ -177,9 +177,8 @@ fun ExploreScreen(
                     val vendors = viewModel.getFilteredBusinesses()
                     val themes = viewModel.getFilteredThemes()
                     val inventory = viewModel.getFilteredInventory()
-                    // Plates & Dishes data can be wired later; for now use empty lists
-                    val plates: List<PlateResponse> = emptyList()
-                    val dishes: List<DishResponse> = emptyList()
+                    val plates = viewModel.getFilteredPlates()
+                    val dishes = viewModel.getFilteredDishes()
 
                     Column(
                         modifier = Modifier
@@ -251,7 +250,7 @@ fun ExploreScreen(
                                 item {
                                     PlateSection(
                                         plates = plates,
-                                        onAddToCart = { /* TODO: implement plate cart */ }
+                                        onAddToCart = { viewModel.addPlateToCart(it) }
                                     )
                                 }
                             }
@@ -260,7 +259,7 @@ fun ExploreScreen(
                                 item {
                                     DishSection(
                                         dishes = dishes,
-                                        onAddToCart = { /* TODO: implement dish cart */ }
+                                        onAddToCart = { viewModel.addDishToCart(it) }
                                     )
                                 }
                             }
@@ -298,59 +297,86 @@ fun ExploreTopBar(
     onFilterClick: () -> Unit,
     onProfileClick: () -> Unit
 ) {
+    val topBarHeight = 60.dp
+    val actionButtonSize = 48.dp
+    val itemSpacing = 8.dp
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            OutlinedTextField(
-                value = searchText,
-                onValueChange = onSearchChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Search themes, food, vendors") },
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = "Search")
-                },
-                singleLine = true
-            )
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val desiredSearchWidth = maxWidth * 0.5f
+            val actionsWidth = actionButtonSize * 4
+            val totalSpacing = itemSpacing * 4
+            val maxAllowedSearchWidth = maxWidth - actionsWidth - totalSpacing
+            val searchWidth = minOf(desiredSearchWidth, maxAllowedSearchWidth)
 
-            BadgedBox(
-                badge = {
-                    if (filterCount > 0) {
-                        Badge { Text(filterCount.toString()) }
-                    }
-                }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(topBarHeight),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(itemSpacing)
             ) {
-                IconButton(onClick = onFilterClick) {
-                    Icon(Icons.Default.FilterList, contentDescription = "Filters")
-                }
-            }
-            
-            IconButton(onClick = onNotificationsClick) {
-                Icon(Icons.Default.Notifications, contentDescription = "Notifications")
-            }
+                OutlinedTextField(
+                    value = searchText,
+                    onValueChange = onSearchChange,
+                    modifier = Modifier
+                        .width(searchWidth)
+                        .fillMaxHeight(),
+                    placeholder = { Text("Search themes, food, vendors") },
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    },
+                    singleLine = true
+                )
 
-            BadgedBox(
-                badge = {
-                    if (cartCount > 0) {
-                        Badge {
-                            Text(cartCount.toString())
+                BadgedBox(
+                    badge = {
+                        if (filterCount > 0) {
+                            Badge { Text(filterCount.toString()) }
                         }
                     }
+                ) {
+                    IconButton(
+                        onClick = onFilterClick,
+                        modifier = Modifier.size(actionButtonSize)
+                    ) {
+                        Icon(Icons.Default.FilterList, contentDescription = "Filters")
+                    }
                 }
-            ) {
-                IconButton(onClick = onCartClick) {
-                    Icon(Icons.Default.ShoppingCart, contentDescription = "Cart")
-                }
-            }
 
-            IconButton(onClick = onProfileClick) {
-                Icon(Icons.Default.AccountCircle, contentDescription = "Profile")
+                IconButton(
+                    onClick = onNotificationsClick,
+                    modifier = Modifier.size(actionButtonSize)
+                ) {
+                    Icon(Icons.Default.Notifications, contentDescription = "Notifications")
+                }
+
+                BadgedBox(
+                    badge = {
+                        if (cartCount > 0) {
+                            Badge {
+                                Text(cartCount.toString())
+                            }
+                        }
+                    }
+                ) {
+                    IconButton(
+                        onClick = onCartClick,
+                        modifier = Modifier.size(actionButtonSize)
+                    ) {
+                        Icon(Icons.Default.ShoppingCart, contentDescription = "Cart")
+                    }
+                }
+
+                IconButton(
+                    onClick = onProfileClick,
+                    modifier = Modifier.size(actionButtonSize)
+                ) {
+                    Icon(Icons.Default.AccountCircle, contentDescription = "Profile")
+                }
             }
         }
     }
@@ -743,6 +769,36 @@ fun PlateSection(
                         modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+                        // Plate image (if provided by backend)
+                        val plateImageUrl = platePrimaryImageUrl(plate)
+                        if (plateImageUrl != null) {
+                            AsyncImage(
+                                model = plateImageUrl,
+                                contentDescription = plate.plateName,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(90.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(90.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Image,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
                         // Veg / Non-veg badge (placeholder - no field in model yet)
                         Surface(
                             color = MaterialTheme.colorScheme.primaryContainer,
@@ -807,20 +863,33 @@ fun DishSection(
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Image placeholder
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(90.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.RamenDining,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                        // Dish image (if provided by backend)
+                        val dishImageUrl = dishPrimaryImageUrl(dish)
+                        if (dishImageUrl != null) {
+                            AsyncImage(
+                                model = dishImageUrl,
+                                contentDescription = dish.dishName,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(90.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(90.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.RamenDining,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
 
@@ -868,6 +937,16 @@ fun DishSection(
             }
         }
     }
+}
+
+private fun platePrimaryImageUrl(plate: PlateResponse): String? {
+    val candidate = plate.images?.firstOrNull { !it.isNullOrBlank() } ?: plate.plateImage
+    return UrlResolver.resolve(candidate)
+}
+
+private fun dishPrimaryImageUrl(dish: DishResponse): String? {
+    val candidate = dish.images?.firstOrNull { !it.isNullOrBlank() } ?: dish.dishImage
+    return UrlResolver.resolve(candidate)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

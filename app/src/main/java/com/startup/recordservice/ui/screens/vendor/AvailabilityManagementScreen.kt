@@ -103,7 +103,7 @@ fun AvailabilityManagementScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "Set date-wise availability for your themes, inventory, and plates",
+                text = "Set date-wise availability for your themes, inventory, plates, and dishes",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

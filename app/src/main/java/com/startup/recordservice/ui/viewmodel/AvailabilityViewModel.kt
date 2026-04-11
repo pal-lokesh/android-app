@@ -13,6 +13,7 @@ import com.startup.recordservice.data.repository.AvailabilityRepository
 import com.startup.recordservice.data.repository.BusinessRepository
 import com.startup.recordservice.data.repository.InventoryRepository
 import com.startup.recordservice.data.repository.PlateRepository
+import com.startup.recordservice.data.repository.DishRepository
 import com.startup.recordservice.data.repository.ThemeRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,7 +27,7 @@ import javax.inject.Inject
 data class AvailabilityItem(
     val id: String,
     val name: String,
-    val type: String // "theme" | "inventory" | "plate"
+    val type: String // "theme" | "inventory" | "plate" | "dish"
 )
 
 sealed class AvailabilityUiState {
@@ -42,6 +43,7 @@ class AvailabilityViewModel @Inject constructor(
     private val themeRepository: ThemeRepository,
     private val inventoryRepository: InventoryRepository,
     private val plateRepository: PlateRepository,
+    private val dishRepository: DishRepository,
     private val availabilityRepository: AvailabilityRepository,
     private val tokenManager: TokenManager
 ) : ViewModel() {
@@ -142,6 +144,23 @@ class AvailabilityViewModel @Inject constructor(
                         if (!id.isNullOrBlank()) {
                             // PlateResponse maps backend `dishName` into `plateName`
                             all.add(AvailabilityItem(id = id, name = p.plateName ?: "Plate", type = "plate"))
+                        }
+                    }
+                }
+
+            // Dishes are needed for catering workflows (client orders may include DISH items directly)
+            dishRepository.getBusinessDishes(businessId)
+                .onSuccess { dishes: List<com.startup.recordservice.data.model.DishResponse> ->
+                    dishes.forEach { d ->
+                        val id = d.dishId
+                        if (!id.isNullOrBlank()) {
+                            all.add(
+                                AvailabilityItem(
+                                    id = id,
+                                    name = d.dishName ?: "Dish",
+                                    type = "dish"
+                                )
+                            )
                         }
                     }
                 }

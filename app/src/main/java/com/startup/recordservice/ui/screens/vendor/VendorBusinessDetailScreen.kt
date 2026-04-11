@@ -56,7 +56,12 @@ fun VendorBusinessDetailScreen(
     fun isCateringBusiness(business: com.startup.recordservice.data.model.BusinessResponse?): Boolean {
         if (business == null) return false
         val category = business.category?.lowercase() ?: ""
-        return category == "caters" || category == "catering" || category.contains("cater")
+        return category == "caters" ||
+            category == "catering" ||
+            category.contains("cater") ||
+            category.contains("food") ||
+            category.contains("dish") ||
+            category.contains("restaurant")
     }
     
     fun isFarmhouseBusiness(business: com.startup.recordservice.data.model.BusinessResponse?): Boolean {
@@ -691,7 +696,12 @@ fun BusinessDetailsTab(
     orders: List<com.startup.recordservice.data.model.OrderResponse> = emptyList()
 ) {
     val category = business.category?.lowercase() ?: ""
-    val isCatering = category == "caters" || category == "catering" || category.contains("cater")
+    val isCatering = category == "caters" ||
+        category == "catering" ||
+        category.contains("cater") ||
+        category.contains("food") ||
+        category.contains("dish") ||
+        category.contains("restaurant")
     val isFarmhouse = category.contains("farmhouse") == true || 
                       business.category?.lowercase()?.contains("farm house") == true
     
@@ -1254,6 +1264,24 @@ fun DishesTab(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                if (plates.isNotEmpty()) {
+                    Button(
+                        onClick = {
+                            plates.firstOrNull()?.plateId?.let(onAddDish)
+                        }
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Add Dish")
+                    }
+                } else {
+                    Text(
+                        text = "Create a plate first, then add dishes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     } else {

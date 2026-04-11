@@ -7,11 +7,15 @@ import com.startup.recordservice.data.local.TokenManager
 import com.startup.recordservice.data.model.BusinessResponse
 import com.startup.recordservice.data.model.ThemeResponse
 import com.startup.recordservice.data.model.InventoryResponse
+import com.startup.recordservice.data.model.PlateResponse
+import com.startup.recordservice.data.model.DishResponse
 import com.startup.recordservice.data.model.OrderItemRequest
 import com.startup.recordservice.data.model.OrderRequest
 import com.startup.recordservice.data.repository.BusinessRepository
 import com.startup.recordservice.data.repository.ThemeRepository
 import com.startup.recordservice.data.repository.InventoryRepository
+import com.startup.recordservice.data.repository.PlateRepository
+import com.startup.recordservice.data.repository.DishRepository
 import com.startup.recordservice.data.repository.AvailabilityRepository
 import com.startup.recordservice.data.repository.InventoryImageRepository
 import com.startup.recordservice.data.repository.ImageRepository
@@ -52,6 +56,8 @@ class ExploreViewModel @Inject constructor(
     private val businessRepository: BusinessRepository,
     private val themeRepository: ThemeRepository,
     private val inventoryRepository: InventoryRepository,
+    private val plateRepository: PlateRepository,
+    private val dishRepository: DishRepository,
     private val inventoryImageRepository: InventoryImageRepository,
     private val imageRepository: ImageRepository,
     private val orderRepository: OrderRepository,
@@ -72,6 +78,12 @@ class ExploreViewModel @Inject constructor(
     
     private val _inventory = MutableStateFlow<List<InventoryResponse>>(emptyList())
     val inventory: StateFlow<List<InventoryResponse>> = _inventory.asStateFlow()
+
+    private val _plates = MutableStateFlow<List<PlateResponse>>(emptyList())
+    val plates: StateFlow<List<PlateResponse>> = _plates.asStateFlow()
+
+    private val _dishes = MutableStateFlow<List<DishResponse>>(emptyList())
+    val dishes: StateFlow<List<DishResponse>> = _dishes.asStateFlow()
 
     // Map of inventoryId -> first image URL (from inventory images endpoint)
     private val _inventoryImageUrls = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -113,10 +125,40 @@ class ExploreViewModel @Inject constructor(
                 val businessesList = businessesResult.getOrElse { emptyList() }
                 val themesList = themesResult.getOrElse { emptyList() }
                 val inventoryList = inventoryResult.getOrElse { emptyList() }
+
+                // Plates/dishes are loaded via business/plate endpoints so image URLs are present.
+                val platesList = mutableListOf<PlateResponse>()
+                val dishesList = mutableListOf<DishResponse>()
+
+                businessesList.forEach { business ->
+                    val businessId = business.businessId
+                    if (businessId.isNullOrBlank()) return@forEach
+
+                    val businessPlates = plateRepository.getBusinessPlates(businessId).getOrElse { emptyList() }
+                    platesList.addAll(businessPlates)
+
+                    businessPlates.forEach { plate ->
+                        val plateId = plate.plateId
+                        if (plateId.isNullOrBlank()) return@forEach
+
+                        val plateDishes = dishRepository.getPlateDishes(plateId).getOrElse { emptyList() }
+                        dishesList.addAll(plateDishes)
+                    }
+                }
+
+                val distinctPlates = platesList
+                    .filter { !it.plateId.isNullOrBlank() }
+                    .distinctBy { it.plateId }
+
+                val distinctDishes = dishesList
+                    .filter { !it.dishId.isNullOrBlank() }
+                    .distinctBy { it.dishId }
                 
                 _businesses.value = businessesList
                 _themes.value = themesList
                 _inventory.value = inventoryList
+                _plates.value = distinctPlates
+                _dishes.value = distinctDishes
 
                 // Load primary image URLs for each inventory item
                 val imageMap = mutableMapOf<String, String>()
@@ -324,6 +366,28 @@ class ExploreViewModel @Inject constructor(
         
         return filtered
     }
+
+    fun getFilteredPlates(): List<PlateResponse> {
+        val query = _searchQuery.value.lowercase()
+        return _plates.value.filter { plate ->
+            val matchesSearch = query.isEmpty() ||
+                plate.plateName?.lowercase()?.contains(query) == true ||
+                plate.description?.lowercase()?.contains(query) == true ||
+                plate.category?.lowercase()?.contains(query) == true
+            matchesSearch && plate.isActive
+        }
+    }
+
+    fun getFilteredDishes(): List<DishResponse> {
+        val query = _searchQuery.value.lowercase()
+        return _dishes.value.filter { dish ->
+            val matchesSearch = query.isEmpty() ||
+                dish.dishName?.lowercase()?.contains(query) == true ||
+                dish.description?.lowercase()?.contains(query) == true ||
+                dish.dishType?.lowercase()?.contains(query) == true
+            matchesSearch && dish.isActive
+        }
+    }
     
     fun addInventoryToCart(item: InventoryResponse) {
         if (!item.isActive) return
@@ -375,6 +439,62 @@ class ExploreViewModel @Inject constructor(
                 price = numericPrice,
                 type = "THEME",
                 businessId = theme.businessId,
+                businessName = businessName,
+                quantity = 1
+            )
+        }
+        _cartItems.value = current
+        _cartCount.value = current.sumOf { it.quantity }
+        persistCartToStorage()
+    }
+
+    fun addPlateToCart(plate: PlateResponse) {
+        if (!plate.isActive) return
+        val id = plate.plateId ?: return
+
+        val current = _cartItems.value.toMutableList()
+        val existingIndex = current.indexOfFirst { it.id == id && it.type == "PLATE" }
+        if (existingIndex >= 0) {
+            val existing = current[existingIndex]
+            current[existingIndex] = existing.copy(quantity = existing.quantity + 1)
+        } else {
+            val businessName = plate.businessId?.let { bid ->
+                _businesses.value.firstOrNull { it.businessId == bid }?.businessName
+            }
+            current += ExploreCartItem(
+                id = id,
+                name = plate.plateName ?: "Plate",
+                price = plate.price,
+                type = "PLATE",
+                businessId = plate.businessId,
+                businessName = businessName,
+                quantity = 1
+            )
+        }
+        _cartItems.value = current
+        _cartCount.value = current.sumOf { it.quantity }
+        persistCartToStorage()
+    }
+
+    fun addDishToCart(dish: DishResponse) {
+        if (!dish.isActive) return
+        val id = dish.dishId ?: return
+
+        val current = _cartItems.value.toMutableList()
+        val existingIndex = current.indexOfFirst { it.id == id && it.type == "DISH" }
+        if (existingIndex >= 0) {
+            val existing = current[existingIndex]
+            current[existingIndex] = existing.copy(quantity = existing.quantity + 1)
+        } else {
+            val businessName = dish.businessId?.let { bid ->
+                _businesses.value.firstOrNull { it.businessId == bid }?.businessName
+            }
+            current += ExploreCartItem(
+                id = id,
+                name = dish.dishName ?: "Dish",
+                price = dish.price,
+                type = "DISH",
+                businessId = dish.businessId,
                 businessName = businessName,
                 quantity = 1
             )

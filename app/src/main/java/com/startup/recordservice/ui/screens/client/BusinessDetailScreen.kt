@@ -11,17 +11,20 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
+import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import com.startup.recordservice.ui.viewmodel.BusinessDetailViewModel
 import com.startup.recordservice.ui.viewmodel.BusinessCartItem
 import com.startup.recordservice.data.model.PlateResponse
 import com.startup.recordservice.data.model.DishResponse
 import com.startup.recordservice.data.model.InventoryResponse
+import com.startup.recordservice.data.util.UrlResolver
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -50,7 +53,28 @@ fun BusinessDetailScreen(
     val cartItems by viewModel.cartItems.collectAsStateWithLifecycle()
     
     var selectedTabIndex by remember { mutableStateOf(0) }
-    val tabs = listOf("Info", "Plates", "Inventory")
+    val businessCategory = business?.category?.lowercase().orEmpty()
+    val isCateringBusiness = remember(businessCategory) {
+        businessCategory == "caters" ||
+            businessCategory == "catering" ||
+            businessCategory.contains("cater") ||
+            businessCategory.contains("food") ||
+            businessCategory.contains("dish") ||
+            businessCategory.contains("restaurant")
+    }
+    val tabs = remember(isCateringBusiness) {
+        if (isCateringBusiness) {
+            listOf("Info", "Plates", "Inventory")
+        } else {
+            listOf("Info", "Inventory")
+        }
+    }
+
+    LaunchedEffect(tabs.size) {
+        if (selectedTabIndex >= tabs.size) {
+            selectedTabIndex = 0
+        }
+    }
     
     var showCart by remember { mutableStateOf(false) }
     var showCheckout by remember { mutableStateOf(false) }
@@ -205,9 +229,9 @@ fun BusinessDetailScreen(
                     }
                     
                     // Tab Content
-                    when (selectedTabIndex) {
-                        0 -> BusinessInfoTab(business = biz)
-                        1 -> PlatesTab(
+                    when (tabs.getOrElse(selectedTabIndex) { "Info" }) {
+                        "Info" -> BusinessInfoTab(business = biz)
+                        "Plates" -> PlatesTab(
                             plates = plates, 
                             plateDishes = plateDishes,
                             businessId = businessId,
@@ -219,12 +243,13 @@ fun BusinessDetailScreen(
                                 viewModel.addDishToCart(dish, businessId, business?.businessName)
                             }
                         )
-                        2 -> InventoryTab(
+                        "Inventory" -> InventoryTab(
                             inventory = inventory,
                             onAddToCart = { inv ->
                                 viewModel.addInventoryToCart(inv, businessId, business?.businessName)
                             }
                         )
+                        else -> BusinessInfoTab(business = biz)
                     }
                 }
             }
@@ -517,6 +542,8 @@ fun PlateCard(
     onAddPlateToCart: () -> Unit = {},
     onAddDishToCart: (DishResponse) -> Unit = {}
 ) {
+    val plateImageUrl = remember(plate) { platePrimaryImageUrl(plate) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -525,6 +552,17 @@ fun PlateCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (plateImageUrl != null) {
+                AsyncImage(
+                    model = plateImageUrl,
+                    contentDescription = plate.plateName ?: "Plate image",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -567,13 +605,23 @@ fun PlateCard(
                     fontWeight = FontWeight.Bold
                 )
                 dishes.forEach { dish ->
+                    val dishImageUrl = remember(dish) { dishPrimaryImageUrl(dish) }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(start = 16.dp, top = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (dishImageUrl != null) {
+                            AsyncImage(
+                                model = dishImageUrl,
+                                contentDescription = dish.dishName ?: "Dish image",
+                                modifier = Modifier
+                                    .size(56.dp),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = dish.dishName?.takeIf { it.isNotBlank() } ?: "Unknown Dish",
@@ -617,6 +665,18 @@ fun PlateCard(
             }
         }
     }
+}
+
+private fun platePrimaryImageUrl(plate: PlateResponse): String? {
+    val candidate = plate.images?.firstOrNull { !it.isNullOrBlank() }
+        ?: plate.plateImage
+    return UrlResolver.resolve(candidate)
+}
+
+private fun dishPrimaryImageUrl(dish: DishResponse): String? {
+    val candidate = dish.images?.firstOrNull { !it.isNullOrBlank() }
+        ?: dish.dishImage
+    return UrlResolver.resolve(candidate)
 }
 
 @Composable
